@@ -47,6 +47,12 @@ on:
         description: "수집 API 주소 (비우면 업로드 생략)"
         type: string
         default: ""
+      private-repository:
+        description: >-
+          비공개 저장소에서 SLSA 출처 증명을 공개 투명성 로그(Rekor)에 기록하도록 허용.
+          저장소 이름·워크플로우 경로·커밋 SHA 가 공개 로그에 남는다 (cosign keyless 서명도 동일).
+        type: boolean
+        default: false
     secrets:
       trustchain-token:
         required: false
@@ -251,5 +257,6 @@ jobs:
       image: ${{ needs.build.outputs.image }}
       digest: ${{ needs.build.outputs.digest }}
       registry-username: ${{ github.actor }}
+      private-repository: ${{ inputs.private-repository }}
     secrets:
       registry-password: ${{ secrets.GITHUB_TOKEN }}
