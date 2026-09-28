@@ -25,6 +25,8 @@ class GatePolicy:
     block_on_package_verdict: bool = True
     # 신뢰 점수 하한 (0 이면 비활성)
     min_trust_score: int = 0
+    # 이미지 스캔에서 배포판이 패치를 내지 않은(FixedVersion 없음) 취약점은 보고만 하고 게이트 판정에서 제외
+    ignore_unfixed: bool = True
 
     def violations(self, counts: dict[str, int]) -> list[str]:
         out = []

@@ -6,7 +6,7 @@ path = "model/mnist.keras"
 framework = "tensorflow-keras"
 task = "image-classification"
 license = "Apache-2.0"
-source_repo = "https://github.com/trustchain-ai/trustchain-ai"
+source_repo = "https://github.com/kswkm/TrustChain-AI"
 # 학습 코드 리비전 : CI 에서 GITHUB_SHA 로 치환 (trustchain aibom 실행 전 sed)
 revision = "REPLACED_BY_CI"
 

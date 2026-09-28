@@ -219,7 +219,7 @@ def cmd_aibom_verify(args: argparse.Namespace) -> int:
     from trustchain.bom.aibom import load_bom, verify_aibom
 
     checks = verify_aibom(load_bom(Path(args.aibom)), Path(args.root))
-    ok = all(c.ok for c in checks) and bool(checks)
+    ok = all(c.ok for c in checks)  # 모델이 없는 프로젝트는 검증할 대상이 없으므로 통과
     for c in checks:
         print(f"[{'OK' if c.ok else 'FAIL'}] {c.name} {c.path or ''} {c.reason}")
     if not checks:

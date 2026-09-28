@@ -157,7 +157,7 @@ def s6(image: str | None, repo: str | None) -> Result:
                       "건너뜀: --image <registry/repo@sha256:...> 와 cosign 필요 (docs/scenarios.md)")
     from trustchain.attest.verify import VerifyGate
 
-    pol = ProvenancePolicy(source_repo=repo or "github.com/trustchain-ai/trustchain-ai",
+    pol = ProvenancePolicy(source_repo=repo or "github.com/kswkm/TrustChain-AI",
                            workflow_path=".github/workflows/trustchain-ci.yml")
     res = VerifyGate(pol).verify(image)
     failed = [f"{c.name}: {c.detail[:60]}" for c in res.checks if not c.passed]

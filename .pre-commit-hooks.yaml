@@ -1,6 +1,6 @@
 # 다른 저장소의 .pre-commit-config.yaml 에서 사용:
 #   repos:
-#     - repo: https://github.com/trustchain-ai/trustchain-ai
+#     - repo: https://github.com/kswkm/TrustChain-AI
 #       rev: <commit-sha>
 #       hooks:
 #         - id: trustchain-check

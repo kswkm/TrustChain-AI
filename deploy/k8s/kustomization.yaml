@@ -1,5 +1,5 @@
 # kubectl apply -k deploy/k8s
-# 이미지 digest 교체: kustomize edit set image ghcr.io/trustchain-ai/trustchain-platform@sha256:<digest>
+# 이미지 digest 교체: kustomize edit set image ghcr.io/kswkm/trustchain-platform@sha256:<digest>
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:

@@ -21,6 +21,8 @@ max_medium = 1000000
 block_on_package_verdict = true
 # 의존성 신뢰 점수 하한 (0 = 비활성)
 min_trust_score = 0
+# 이미지 취약점 중 배포판 패치가 없는 것은 보고만 하고 게이트 판정에서 제외
+ignore_unfixed = true
 
 [provenance]
 # Verify Gate 가 요구하는 빌드 출처
@@ -28,4 +30,4 @@ source_repo = "github.com/your-org/your-repo"
 branch = "main"
 workflow_path = ".github/workflows/trustchain-ci.yml"
 # 재사용 워크플로우로 서명했다면 그 저장소 (Fulcio 인증서 SAN)
-signer_repo = "github.com/trustchain-ai/trustchain-ai"
+signer_repo = "github.com/kswkm/TrustChain-AI"

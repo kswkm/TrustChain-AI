@@ -45,7 +45,7 @@ on:
       signer-repo:
         description: "재사용 워크플로우가 있는 저장소 (서명 인증서 SAN)"
         type: string
-        default: "trustchain-ai/trustchain-ai"
+        default: "kswkm/TrustChain-AI"
       cluster-auth:
         type: string
         default: "kubeconfig"
@@ -58,6 +58,9 @@ on:
       eks-cluster:
         type: string
         default: ""
+      trustchain-repo:
+        type: string
+        default: "kswkm/TrustChain-AI"
       trustchain-ref:
         type: string
         default: "main"
@@ -83,7 +86,14 @@ jobs:
       - uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.3.0
         with:
           python-version: "3.11"
-      - run: pip install "trustchain-ai @ git+https://github.com/trustchain-ai/trustchain-ai@${{ inputs.trustchain-ref }}"
+      - name: TrustChain AI 소스 받기
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: ${{ inputs.trustchain-repo }}
+          ref: ${{ inputs.trustchain-ref }}
+          path: .trustchain-src
+          persist-credentials: false
+      - run: pip install "$GITHUB_WORKSPACE/.trustchain-src"
       - uses: sigstore/cosign-installer@dc72c7d5c4d10cd6bcb8cf6e3fd625a9e5e537da # v3.7.0
       - uses: slsa-framework/slsa-verifier/actions/installer@3714a2a4684014deb874a0e737dffa0ee02dd647 # v2.6.0
       - uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0

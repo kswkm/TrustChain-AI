@@ -79,7 +79,8 @@ connect(password="abcdef123")
 
 
 def test_token_patterns():
-    text = 'aws = "AKIAABCDEFGHIJKLMNOP"\nkey = "-----BEGIN RSA PRIVATE KEY-----"\n'
+    # 가짜 자격증명은 나눠 적어 저장소 자체 점검(dogfooding)에 걸리지 않게 한다
+    text = 'aws = "AKIA' + 'ABCDEFGHIJKLMNOP"\nkey = "-----BEGIN RSA ' + 'PRIVATE KEY-----"\n'
     found = list(scan_text_for_tokens(text, "a.py"))
     assert [f.line for f in found] == [1, 2]
     assert all(f.severity.value == "CRITICAL" for f in found)

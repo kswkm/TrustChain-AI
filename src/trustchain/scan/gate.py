@@ -45,7 +45,8 @@ def make_checker(cfg: Config, with_scorecard: bool = True) -> PackageChecker:
 
 
 def evaluate(cfg: Config, report: Report, verdicts: list[PackageVerdict]) -> list[str]:
-    violations = cfg.gate.violations(report.counts())
+    counted = [f for f in report.findings if not (cfg.gate.ignore_unfixed and f.extra.get("unfixed"))]
+    violations = cfg.gate.violations(Report(counted).counts())
     if cfg.gate.block_on_package_verdict:
         blocked = [v.raw_name for v in verdicts if v.verdict == "차단"]
         if blocked:

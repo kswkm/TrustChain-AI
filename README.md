@@ -46,7 +46,7 @@ trustchain scan-model ./models
 
 # ③ 배포 전 검증
 trustchain verify ghcr.io/org/app@sha256:<digest> --repo github.com/org/app \
-  --workflow .github/workflows/trustchain-ci.yml --signer-repo github.com/trustchain-ai/trustchain-ai
+  --workflow .github/workflows/trustchain-ci.yml --signer-repo github.com/kswkm/TrustChain-AI
 
 # ④ 운영 : 수집 API · 피드 모니터 · AI 어시스턴트
 trustchain token --name ci --role ingest
@@ -60,7 +60,7 @@ trustchain pr-draft --report reports/gate.json --requirements requirements.txt
 
 ```yaml
 repos:
-  - repo: https://github.com/trustchain-ai/trustchain-ai
+  - repo: https://github.com/kswkm/TrustChain-AI
     rev: <commit-sha>
     hooks:
       - id: trustchain-check
@@ -71,7 +71,7 @@ repos:
 ```yaml
 jobs:
   trustchain:
-    uses: trustchain-ai/trustchain-ai/.github/workflows/trustchain-ci.yml@<commit-sha>
+    uses: kswkm/TrustChain-AI/.github/workflows/trustchain-ci.yml@<commit-sha>
     with: { context: ".", service: "my-api" }
     permissions: { contents: read, packages: write, id-token: write, actions: read, security-events: write }
     secrets: { trustchain-token: "${{ secrets.TRUSTCHAIN_TOKEN }}" }

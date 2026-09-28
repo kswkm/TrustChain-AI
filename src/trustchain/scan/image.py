@@ -30,7 +30,7 @@ def parse_trivy(data: dict[str, Any], target: str) -> list[Finding]:
                 if fixed else "패치가 없습니다. 더 작은(distroless/slim) 베이스 이미지로 교체를 검토하세요.",
                 cwe=(v.get("CweIDs") or [None])[0], tool="trivy",
                 extra={"pkg": v.get("PkgName"), "installed": v.get("InstalledVersion"), "fixed": fixed,
-                       "class": res.get("Class")},
+                       "class": res.get("Class"), "unfixed": not fixed},
             ))
     return out
 

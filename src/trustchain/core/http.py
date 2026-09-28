@@ -14,7 +14,7 @@ from trustchain import __version__
 
 DEFAULT_TIMEOUT = httpx.Timeout(10.0, connect=5.0)
 MAX_BYTES = 20 * 1024 * 1024
-USER_AGENT = f"trustchain-ai/{__version__} (+https://github.com/trustchain-ai)"
+USER_AGENT = f"trustchain-ai/{__version__} (+https://github.com/kswkm/TrustChain-AI)"
 
 
 class HttpError(RuntimeError):

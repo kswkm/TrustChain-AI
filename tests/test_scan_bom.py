@@ -160,3 +160,18 @@ def test_k8s_manifest_checks():
                                             "capabilities": {"drop": ["ALL"]}},
                         "resources": {"limits": {"memory": "256Mi", "cpu": "500m"}}}]}}
     assert check_manifest(hardened, "p.yaml") == []
+
+
+def test_image_gate_ignores_unfixed_by_default(tmp_path):
+    from trustchain.core.config import Config
+    from trustchain.scan.gate import run_gate
+
+    data = {"Results": [{"Target": "debian", "Vulnerabilities": [
+        {"VulnerabilityID": "CVE-2023-45853", "PkgName": "zlib1g", "InstalledVersion": "1:1.2.13", "Severity": "CRITICAL"}]}]}
+    rep = tmp_path / "t.json"
+    rep.write_text(json.dumps(data), encoding="utf-8")
+    cfg = Config(root=tmp_path)
+    out = run_gate(cfg, stages={"image"}, trivy_report=rep, external_tools=False)
+    assert out.passed and out.report.counts()["CRITICAL"] == 1  # 보고는 하되 차단하지 않음
+    cfg.gate.ignore_unfixed = False
+    assert not run_gate(cfg, stages={"image"}, trivy_report=rep, external_tools=False).passed

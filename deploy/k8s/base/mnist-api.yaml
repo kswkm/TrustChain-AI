@@ -18,7 +18,7 @@ spec:
       securityContext: { runAsNonRoot: true, runAsUser: 10001, seccompProfile: { type: RuntimeDefault } }
       containers:
         - name: app
-          image: ghcr.io/trustchain-ai/mnist-api@sha256:0000000000000000000000000000000000000000000000000000000000000000
+          image: ghcr.io/kswkm/mnist-api@sha256:0000000000000000000000000000000000000000000000000000000000000000
           ports: [{ containerPort: 8080 }]
           readinessProbe: { httpGet: { path: /healthz, port: 8080 }, initialDelaySeconds: 10 }
           securityContext:

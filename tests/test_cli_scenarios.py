@@ -15,7 +15,8 @@ def test_cli_check_json_and_exit_code(tmp_path, capsys):
     out = json.loads(capsys.readouterr().out)
     assert out["findings"][0]["rule_id"] == "TC-CMD-001"
     assert rc == 0  # HIGH 는 기본 정책상 허용 (CRITICAL 0건 기준)
-    (tmp_path / "b.py").write_text('K = "AKIAABCDEFGHIJKLMNOP"\n', encoding="utf-8")
+    # 가짜 키는 나눠 적어 저장소 자체 점검(dogfooding)에 걸리지 않게 한다
+    (tmp_path / "b.py").write_text('K = "AKIA' + 'ABCDEFGHIJKLMNOP"\n', encoding="utf-8")
     rc = main(["check", str(tmp_path), "--root", str(tmp_path), "--no-packages", "--no-external", "--format", "sarif"])
     sarif = json.loads(capsys.readouterr().out)
     assert rc == 1 and sarif["version"] == "2.1.0"

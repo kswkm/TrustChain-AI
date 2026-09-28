@@ -22,7 +22,7 @@ spec:
                   trustchain.dev/verify-images: "true"
       verifyImages:
         - imageReferences:
-            - "ghcr.io/trustchain-ai/*"
+            - "ghcr.io/kswkm/*"
           mutateDigest: true # 태그로 요청해도 검증된 digest 로 고정
           verifyDigest: true
           required: true
@@ -30,7 +30,7 @@ spec:
             - entries:
                 - keyless:
                     # 서명 주체 = TrustChain 재사용 CI 워크플로우, main 브랜치 또는 릴리스 태그
-                    subjectRegExp: "^https://github\\.com/trustchain-ai/trustchain-ai/\\.github/workflows/trustchain-ci\\.yml@refs/(heads/main|tags/v.+)$"
+                    subjectRegExp: "^https://github\\.com/kswkm/TrustChain-AI/\\.github/workflows/trustchain-ci\\.yml@refs/(heads/main|tags/v.+)$"
                     issuer: "https://token.actions.githubusercontent.com"
                     rekor:
                       url: https://rekor.sigstore.dev
@@ -48,13 +48,13 @@ spec:
                 - all:
                     - key: "{{ invocation.configSource.uri }}"
                       operator: Equals
-                      value: "git+https://github.com/trustchain-ai/trustchain-ai@refs/heads/main"
+                      value: "git+https://github.com/kswkm/TrustChain-AI@refs/heads/main"
             # CycloneDX SBOM 증명
             - type: https://cyclonedx.org/bom
               attestors:
                 - entries:
                     - keyless:
-                        subjectRegExp: "^https://github\\.com/trustchain-ai/trustchain-ai/\\.github/workflows/trustchain-ci\\.yml@refs/(heads/main|tags/v.+)$"
+                        subjectRegExp: "^https://github\\.com/kswkm/TrustChain-AI/\\.github/workflows/trustchain-ci\\.yml@refs/(heads/main|tags/v.+)$"
                         issuer: "https://token.actions.githubusercontent.com"
                         rekor:
                           url: https://rekor.sigstore.dev

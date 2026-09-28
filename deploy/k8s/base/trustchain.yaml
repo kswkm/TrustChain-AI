@@ -78,7 +78,7 @@ spec:
       securityContext: { runAsNonRoot: true, runAsUser: 10001, seccompProfile: { type: RuntimeDefault } }
       containers:
         - name: api
-          image: ghcr.io/trustchain-ai/trustchain-platform@sha256:0000000000000000000000000000000000000000000000000000000000000000
+          image: ghcr.io/kswkm/trustchain-platform@sha256:0000000000000000000000000000000000000000000000000000000000000000
           args: ["trustchain", "server", "--host", "0.0.0.0", "--port", "8000"]
           ports: [{ containerPort: 8000 }]
           env:
@@ -126,7 +126,7 @@ spec:
           securityContext: { runAsNonRoot: true, runAsUser: 10001, seccompProfile: { type: RuntimeDefault } }
           containers:
             - name: feed
-              image: ghcr.io/trustchain-ai/trustchain-platform@sha256:0000000000000000000000000000000000000000000000000000000000000000
+              image: ghcr.io/kswkm/trustchain-platform@sha256:0000000000000000000000000000000000000000000000000000000000000000
               args: ["trustchain", "feed"]
               env:
                 - name: TRUSTCHAIN_DATABASE_URL
@@ -159,7 +159,7 @@ spec:
       securityContext: { runAsNonRoot: true, runAsUser: 10001, seccompProfile: { type: RuntimeDefault } }
       containers:
         - name: dashboard
-          image: ghcr.io/trustchain-ai/trustchain-platform@sha256:0000000000000000000000000000000000000000000000000000000000000000
+          image: ghcr.io/kswkm/trustchain-platform@sha256:0000000000000000000000000000000000000000000000000000000000000000
           args: ["streamlit", "run", "/opt/venv/lib/python3.11/site-packages/trustchain/dashboard/app.py",
                  "--server.port=8501", "--server.address=0.0.0.0", "--browser.gatherUsageStats=false"]
           ports: [{ containerPort: 8501 }]
