@@ -1,0 +1,100 @@
+{
+ "features": [
+  "name_similarity",
+  "inv_edit_distance",
+  "keyboard_substitution",
+  "homoglyph",
+  "squat_pattern",
+  "is_popular",
+  "young_package",
+  "few_releases",
+  "no_maintainer",
+  "short_description",
+  "no_wheel",
+  "no_repository"
+ ],
+ "labels": [
+  "정상",
+  "주의",
+  "차단"
+ ],
+ "weights": [
+  [
+   -4.30739,
+   -3.26919,
+   -1.54194,
+   -0.73135,
+   -2.01783,
+   -0.16849,
+   -3.73674,
+   -1.76735,
+   -0.36777,
+   -1.21556,
+   -0.34532,
+   -0.65103
+  ],
+  [
+   0.2313,
+   -0.32704,
+   0.07382,
+   0.29489,
+   0.20517,
+   -1.59669,
+   1.41028,
+   -0.47931,
+   -0.08949,
+   -1.10579,
+   -0.42756,
+   -0.53042
+  ],
+  [
+   4.07608,
+   3.59623,
+   1.46812,
+   0.43646,
+   1.81267,
+   1.76517,
+   2.32645,
+   2.24666,
+   0.45726,
+   2.32134,
+   0.77289,
+   1.18144
+  ]
+ ],
+ "bias": [
+  4.93636,
+  2.22612,
+  -7.16247
+ ],
+ "meta": {
+  "trained_at": "2026-01-01T00:00:00+00:00",
+  "seed": 7,
+  "n_train": 1422,
+  "eval": {
+   "n": 576,
+   "정상": {
+    "precision": 0.9949,
+    "recall": 0.9848,
+    "f1": 0.9898,
+    "support": 198
+   },
+   "주의": {
+    "precision": 0.8241,
+    "recall": 0.978,
+    "f1": 0.8945,
+    "support": 91
+   },
+   "차단": {
+    "precision": 0.9926,
+    "recall": 0.9408,
+    "f1": 0.966,
+    "support": 287
+   },
+   "macro_f1": 0.9501,
+   "risk_detection_f1": 0.9947,
+   "accuracy": 0.9618
+  },
+  "dataset": "trustchain synthetic typosquat set v1 (base-name split 70/30)"
+ }
+}

@@ -1,0 +1,185 @@
+# TrustChain 플랫폼 : PostgreSQL(pgvector) · 수집 API · 피드 모니터(CronJob) · 대시보드
+# 비밀정보는 Secret 'trustchain-secrets' 로만 주입한다 (예시: deploy/k8s/secrets.example.sh)
+# 이미지 digest 는 CI 결과로 kustomize edit set image 해서 교체한다.
+apiVersion: v1
+kind: ServiceAccount
+metadata: { name: trustchain-api, namespace: trustchain }
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata: { name: trustchain-db, namespace: trustchain }
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata: { name: trustchain-dashboard, namespace: trustchain }
+automountServiceAccountToken: false
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata: { name: postgres, namespace: trustchain }
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector: { matchLabels: { app: postgres } }
+  template:
+    metadata: { labels: { app: postgres } }
+    spec:
+      serviceAccountName: trustchain-db
+      automountServiceAccountToken: false
+      securityContext: { runAsNonRoot: true, runAsUser: 999, fsGroup: 999, seccompProfile: { type: RuntimeDefault } }
+      containers:
+        - name: postgres
+          image: docker.io/pgvector/pgvector@sha256:ccc6e83d6e35e931dc7c5def2022729d5a6c370318d099181995567ff1fb4d6b # pg16
+          ports: [{ containerPort: 5432 }]
+          env:
+            - { name: POSTGRES_DB, value: trustchain }
+            - { name: POSTGRES_USER, value: trustchain }
+            - name: POSTGRES_PASSWORD
+              valueFrom: { secretKeyRef: { name: trustchain-secrets, key: postgres-password } }
+            - { name: PGDATA, value: /var/lib/postgresql/data/pgdata }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { cpu: "1", memory: 1Gi }
+          volumeMounts:
+            - { name: data, mountPath: /var/lib/postgresql/data }
+            - { name: run, mountPath: /var/run/postgresql }
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - { name: run, emptyDir: {} }
+        - { name: tmp, emptyDir: {} }
+  volumeClaimTemplates:
+    - metadata: { name: data }
+      spec: { accessModes: [ReadWriteOnce], resources: { requests: { storage: 5Gi } } }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: postgres, namespace: trustchain }
+spec:
+  selector: { app: postgres }
+  ports: [{ port: 5432, targetPort: 5432 }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: trustchain-api, namespace: trustchain }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: trustchain-api } }
+  template:
+    metadata: { labels: { app: trustchain-api } }
+    spec:
+      serviceAccountName: trustchain-api
+      automountServiceAccountToken: false
+      securityContext: { runAsNonRoot: true, runAsUser: 10001, seccompProfile: { type: RuntimeDefault } }
+      containers:
+        - name: api
+          image: ghcr.io/trustchain-ai/trustchain-platform@sha256:0000000000000000000000000000000000000000000000000000000000000000
+          args: ["trustchain", "server", "--host", "0.0.0.0", "--port", "8000"]
+          ports: [{ containerPort: 8000 }]
+          env:
+            - name: TRUSTCHAIN_DATABASE_URL
+              valueFrom: { secretKeyRef: { name: trustchain-secrets, key: database-url } }
+            - name: TRUSTCHAIN_LLM_API_KEY
+              valueFrom: { secretKeyRef: { name: trustchain-secrets, key: llm-api-key, optional: true } }
+            - name: TRUSTCHAIN_SLACK_WEBHOOK
+              valueFrom: { secretKeyRef: { name: trustchain-secrets, key: slack-webhook, optional: true } }
+            - { name: TRUSTCHAIN_EMBED_DIM, value: "384" }
+          readinessProbe: { httpGet: { path: /healthz, port: 8000 }, periodSeconds: 10 }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          resources:
+            requests: { cpu: 200m, memory: 512Mi }
+            limits: { cpu: "2", memory: 3Gi }
+          volumeMounts: [{ name: tmp, mountPath: /tmp }]
+      volumes: [{ name: tmp, emptyDir: {} }]
+---
+apiVersion: v1
+kind: Service
+metadata: { name: trustchain-api, namespace: trustchain }
+spec:
+  selector: { app: trustchain-api }
+  ports: [{ port: 8000, targetPort: 8000 }]
+---
+# F10 : OSV·NVD 신규 취약점 주기 수집 → SBOM 매칭 → 알림
+apiVersion: batch/v1
+kind: CronJob
+metadata: { name: feed-monitor, namespace: trustchain }
+spec:
+  schedule: "*/10 * * * *"
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      template:
+        metadata: { labels: { app: feed-monitor } }
+        spec:
+          restartPolicy: Never
+          serviceAccountName: trustchain-api
+          automountServiceAccountToken: false
+          securityContext: { runAsNonRoot: true, runAsUser: 10001, seccompProfile: { type: RuntimeDefault } }
+          containers:
+            - name: feed
+              image: ghcr.io/trustchain-ai/trustchain-platform@sha256:0000000000000000000000000000000000000000000000000000000000000000
+              args: ["trustchain", "feed"]
+              env:
+                - name: TRUSTCHAIN_DATABASE_URL
+                  valueFrom: { secretKeyRef: { name: trustchain-secrets, key: database-url } }
+                - name: TRUSTCHAIN_SLACK_WEBHOOK
+                  valueFrom: { secretKeyRef: { name: trustchain-secrets, key: slack-webhook, optional: true } }
+                - name: NVD_API_KEY
+                  valueFrom: { secretKeyRef: { name: trustchain-secrets, key: nvd-api-key, optional: true } }
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities: { drop: ["ALL"] }
+              resources:
+                requests: { cpu: 100m, memory: 256Mi }
+                limits: { cpu: "1", memory: 1Gi }
+              volumeMounts: [{ name: tmp, mountPath: /tmp }]
+          volumes: [{ name: tmp, emptyDir: {} }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: trustchain-dashboard, namespace: trustchain }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: trustchain-dashboard } }
+  template:
+    metadata: { labels: { app: trustchain-dashboard } }
+    spec:
+      serviceAccountName: trustchain-dashboard
+      automountServiceAccountToken: false
+      securityContext: { runAsNonRoot: true, runAsUser: 10001, seccompProfile: { type: RuntimeDefault } }
+      containers:
+        - name: dashboard
+          image: ghcr.io/trustchain-ai/trustchain-platform@sha256:0000000000000000000000000000000000000000000000000000000000000000
+          args: ["streamlit", "run", "/opt/venv/lib/python3.11/site-packages/trustchain/dashboard/app.py",
+                 "--server.port=8501", "--server.address=0.0.0.0", "--browser.gatherUsageStats=false"]
+          ports: [{ containerPort: 8501 }]
+          env:
+            - { name: TRUSTCHAIN_API, value: "http://trustchain-api.trustchain.svc:8000" }
+            - name: TRUSTCHAIN_TOKEN # reader 권한 토큰
+              valueFrom: { secretKeyRef: { name: trustchain-secrets, key: dashboard-token } }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { cpu: "1", memory: 1Gi }
+          volumeMounts: [{ name: tmp, mountPath: /tmp }]
+      volumes: [{ name: tmp, emptyDir: {} }]
+---
+apiVersion: v1
+kind: Service
+metadata: { name: trustchain-dashboard, namespace: trustchain }
+spec:
+  selector: { app: trustchain-dashboard }
+  ports: [{ port: 8501, targetPort: 8501 }]

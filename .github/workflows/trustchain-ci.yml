@@ -1,0 +1,234 @@
+# TrustChain AI 재사용 CI 워크플로우 (F5·F6·F7)
+#   스캔 게이트 → 이미지 빌드 → 이미지 취약점 스캔 → SBOM + AI-BOM → cosign keyless 서명·증명 → SLSA L3 출처 증명
+#
+# 사용 예 (다른 저장소):
+#   jobs:
+#     trustchain:
+#       uses: trustchain-ai/trustchain-ai/.github/workflows/trustchain-ci.yml@<commit-sha>
+#       with: { context: ".", service: "my-api" }
+#       permissions: { contents: read, packages: write, id-token: write, actions: read, security-events: write }
+#       secrets: { trustchain-token: "${{ secrets.TRUSTCHAIN_TOKEN }}" }
+#
+# 보안 원칙 : 서드파티 Actions 는 커밋 SHA 로 고정, 잡마다 permissions 최소화, 장기 키 없음(OIDC).
+# 예외 : slsa-github-generator 는 빌더 신원 검증을 위해 태그(@vX.Y.Z)로만 호출해야 한다 (SLSA 공식 요구사항).
+name: trustchain-ci
+
+on:
+  workflow_call:
+    inputs:
+      context:
+        description: "Docker 빌드 컨텍스트 (프로젝트 루트)"
+        type: string
+        default: "."
+      dockerfile:
+        type: string
+        default: "Dockerfile"
+      service:
+        description: "서비스 이름 (대시보드 표시 이름)"
+        type: string
+        required: true
+      image-name:
+        description: "GHCR 이미지 이름 (기본: <owner>/<service>)"
+        type: string
+        default: ""
+      prepare-command:
+        description: "빌드 전 준비 명령 (예: 모델 학습). 컨텍스트 디렉터리에서 실행"
+        type: string
+        default: ""
+      trustchain-ref:
+        description: "설치할 TrustChain AI 버전(커밋 SHA 권장)"
+        type: string
+        default: "main"
+      trustchain-api:
+        description: "수집 API 주소 (비우면 업로드 생략)"
+        type: string
+        default: ""
+    secrets:
+      trustchain-token:
+        required: false
+    outputs:
+      image:
+        value: ${{ jobs.build.outputs.image }}
+      digest:
+        value: ${{ jobs.build.outputs.digest }}
+
+permissions: {}
+
+env:
+  TRUSTCHAIN_PIP: "trustchain-ai @ git+https://github.com/trustchain-ai/trustchain-ai@${{ inputs.trustchain-ref }}"
+
+jobs:
+  scan:
+    name: 보안 스캔 게이트 (코드·의존성·모델·IaC)
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.3.0
+        with:
+          python-version: "3.11"
+      - name: TrustChain · Semgrep · Bandit 설치
+        run: |
+          python -m pip install --upgrade pip
+          pip install "$TRUSTCHAIN_PIP" semgrep==1.101.0 bandit==1.8.0
+      - name: 보안 스캔 게이트
+        id: gate
+        working-directory: ${{ inputs.context }}
+        run: |
+          mkdir -p reports
+          set +e
+          trustchain gate --stages code,packages,models,docker,iac \
+            --format json -o reports/gate.json --sarif reports/gate.sarif
+          echo "rc=$?" >> "$GITHUB_OUTPUT"
+          python - <<'PY'
+          import json
+          d = json.load(open("reports/gate.json", encoding="utf-8"))
+          print("요약:", d["summary"])
+          for v in d["gate"]["violations"]:
+              print("::error title=TrustChain 게이트::" + v)
+          PY
+      - name: SARIF 업로드 (GitHub Code Scanning)
+        if: always()
+        uses: github/codeql-action/upload-sarif@df409f7d9260372bd5f19e5b04e83cb3c43714ae # v3.27.9
+        with:
+          sarif_file: ${{ inputs.context }}/reports/gate.sarif
+          category: trustchain
+      - uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b # v4.5.0
+        if: always()
+        with:
+          name: trustchain-gate-report
+          path: ${{ inputs.context }}/reports/gate.json
+      - name: 수집 API 로 리포트 전송
+        if: always() && inputs.trustchain-api != ''
+        working-directory: ${{ inputs.context }}
+        env:
+          TRUSTCHAIN_TOKEN: ${{ secrets.trustchain-token }}
+        run: |
+          trustchain upload report --server "${{ inputs.trustchain-api }}" --service "${{ inputs.service }}" \
+            --repo "github.com/${{ github.repository }}" --git-sha "${{ github.sha }}" --file reports/gate.json || true
+      - name: 게이트 판정
+        if: steps.gate.outputs.rc != '0'
+        run: |
+          echo "::error::보안 스캔 게이트 실패 - 빌드를 중단합니다"
+          exit 1
+
+  build:
+    name: 빌드 · 이미지 스캔 · SBOM/AI-BOM · 서명
+    needs: scan
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      packages: write
+      id-token: write # Sigstore keyless 서명 (Fulcio OIDC)
+    outputs:
+      image: ${{ steps.meta.outputs.image }}
+      digest: ${{ steps.push.outputs.digest }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.3.0
+        with:
+          python-version: "3.11"
+      - run: pip install "$TRUSTCHAIN_PIP"
+      - name: 이미지 이름
+        id: meta
+        run: |
+          name="${{ inputs.image-name }}"
+          [ -z "$name" ] && name="${{ github.repository_owner }}/${{ inputs.service }}"
+          echo "image=ghcr.io/${name,,}" >> "$GITHUB_OUTPUT"
+      - name: 빌드 준비
+        if: inputs.prepare-command != ''
+        working-directory: ${{ inputs.context }}
+        run: ${{ inputs.prepare-command }}
+      - name: AI-BOM 생성 (모델 가중치 해시·출처)
+        working-directory: ${{ inputs.context }}
+        run: |
+          [ -f models.toml ] && sed -i "s/REPLACED_BY_CI/${GITHUB_SHA}/" models.toml
+          trustchain aibom --name "${{ inputs.service }}" -o aibom.cdx.json
+          trustchain aibom-verify aibom.cdx.json || { echo "::error::AI-BOM 검증 실패"; exit 1; }
+      - uses: docker/setup-buildx-action@6524bf65af31da8d45b59e8c27de4bd072b392f5 # v3.8.0
+      - uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: 이미지 빌드·푸시
+        id: push
+        uses: docker/build-push-action@48aba3b46d1b1fec4febb7c5d0c644b249a11355 # v6.10.0
+        with:
+          context: ${{ inputs.context }}
+          file: ${{ inputs.context }}/${{ inputs.dockerfile }}
+          push: true
+          tags: ${{ steps.meta.outputs.image }}:${{ github.sha }}
+          provenance: false # 출처 증명은 SLSA L3 생성기가 담당
+          sbom: false
+      - name: 이미지 취약점 스캔 (Trivy)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ steps.meta.outputs.image }}@${{ steps.push.outputs.digest }}
+          format: json
+          output: trivy.json
+          scanners: vuln
+          exit-code: "0"
+      - name: 이미지 게이트 (trustchain.toml 의 gate 기준 초과 시 중단)
+        working-directory: ${{ inputs.context }}
+        run: |
+          trustchain gate --stages image --trivy-report "$GITHUB_WORKSPACE/trivy.json" --image "${{ steps.meta.outputs.image }}" \
+            --format json -o image-gate.json
+      - name: SBOM 생성 (Syft, CycloneDX)
+        uses: anchore/sbom-action@df80a981bc6edbc4e220a492d3cbe9f5547a6e75 # v0.17.9
+        with:
+          image: ${{ steps.meta.outputs.image }}@${{ steps.push.outputs.digest }}
+          format: cyclonedx-json
+          output-file: sbom.cdx.json
+          upload-artifact: false
+      - uses: sigstore/cosign-installer@dc72c7d5c4d10cd6bcb8cf6e3fd625a9e5e537da # v3.7.0
+      - name: cosign keyless 서명 + SBOM/AI-BOM 증명 첨부
+        env:
+          REF: ${{ steps.meta.outputs.image }}@${{ steps.push.outputs.digest }}
+        run: |
+          cosign sign --yes "$REF"
+          cosign attest --yes --type cyclonedx --predicate sbom.cdx.json "$REF"
+          cosign attest --yes --type https://trustchain.dev/attestations/aibom/v1 \
+            --predicate "${{ inputs.context }}/aibom.cdx.json" "$REF"
+      - uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b # v4.5.0
+        with:
+          name: trustchain-bom
+          path: |
+            sbom.cdx.json
+            trivy.json
+            ${{ inputs.context }}/aibom.cdx.json
+      - name: 수집 API 로 SBOM 전송
+        if: inputs.trustchain-api != ''
+        env:
+          TRUSTCHAIN_TOKEN: ${{ secrets.trustchain-token }}
+        run: |
+          python - <<'PY'
+          import json
+          from trustchain.bom.aibom import merge_boms
+          s = json.load(open("sbom.cdx.json")); a = json.load(open("${{ inputs.context }}/aibom.cdx.json"))
+          json.dump(merge_boms(s, a), open("merged.cdx.json", "w"))
+          PY
+          trustchain upload sbom --server "${{ inputs.trustchain-api }}" --service "${{ inputs.service }}" \
+            --digest "${{ steps.push.outputs.digest }}" --image "${{ steps.meta.outputs.image }}" \
+            --git-sha "${{ github.sha }}" --file merged.cdx.json
+
+  provenance:
+    name: SLSA Build L3 출처 증명
+    needs: build
+    permissions:
+      actions: read
+      id-token: write
+      packages: write
+    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_container_slsa3.yml@v2.1.0
+    with:
+      image: ${{ needs.build.outputs.image }}
+      digest: ${{ needs.build.outputs.digest }}
+      registry-username: ${{ github.actor }}
+    secrets:
+      registry-password: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,19 @@
+# AI-BOM 모델 선언 (trustchain aibom 이 읽어 CycloneDX machine-learning-model 로 기록)
+[[model]]
+name = "mnist-cnn"
+version = "1.0.0"
+path = "model/mnist.keras"
+framework = "tensorflow-keras"
+task = "image-classification"
+license = "Apache-2.0"
+source_repo = "https://github.com/trustchain-ai/trustchain-ai"
+# 학습 코드 리비전 : CI 에서 GITHUB_SHA 로 치환 (trustchain aibom 실행 전 sed)
+revision = "REPLACED_BY_CI"
+
+[[model.dataset]]
+name = "MNIST"
+url = "https://storage.googleapis.com/tensorflow/tf-keras-datasets/mnist.npz"
+# keras.datasets.mnist.load_data 가 검증하는 파일 해시
+sha256 = "731c5ac602752760c8e48fbffcf8c3b850d9dc2a2aedcf2cc48468fc17b673d1"
+license = "CC-BY-SA-3.0"
+description = "Yann LeCun et al. MNIST handwritten digit database (60,000 train / 10,000 test)"

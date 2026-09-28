@@ -1,0 +1,8 @@
+# 시연 서비스 런타임 의존성 (버전 고정)
+# 해시 고정본 생성: pip-compile --generate-hashes requirements.in -o requirements.lock
+# 이미지 빌드는 CI 에서 생성한 requirements.lock 으로 `pip install --require-hashes` 를 사용한다.
+fastapi==0.115.6
+uvicorn==0.34.0
+pydantic==2.10.4
+numpy==1.26.4
+tensorflow-cpu==2.18.0

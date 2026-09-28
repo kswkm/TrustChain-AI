@@ -1,0 +1,32 @@
+# 시연 서비스 배포 : Verify Gate 통과 digest 만 배포 (수동 실행)
+name: deploy-demo
+
+on:
+  workflow_dispatch:
+    inputs:
+      digest:
+        description: "배포할 이미지 digest (sha256:...)"
+        required: true
+
+permissions: {}
+
+jobs:
+  cd:
+    permissions:
+      contents: read
+      packages: read
+      id-token: write
+    uses: ./.github/workflows/trustchain-cd.yml
+    with:
+      image: ghcr.io/${{ github.repository_owner }}/mnist-api
+      digest: ${{ inputs.digest }}
+      service: mnist-api
+      namespace: app
+      deployment: mnist-api
+      container: app
+      signer-repo: ${{ github.repository }}
+      trustchain-ref: ${{ github.sha }}
+      trustchain-api: ${{ vars.TRUSTCHAIN_API }}
+    secrets:
+      kubeconfig: ${{ secrets.KUBECONFIG }}
+      trustchain-token: ${{ secrets.TRUSTCHAIN_TOKEN }}

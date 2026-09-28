@@ -1,0 +1,92 @@
+# TrustChain AI - KISA 시큐어코딩 가이드(Python) 기반 Semgrep 룰
+# 자체 AST 엔진(rules.py)과 같은 룰 ID 를 사용하므로 결과가 자동으로 병합된다.
+rules:
+  - id: TC-SQL-001
+    languages: [python]
+    severity: ERROR
+    message: "SQL 삽입: 문자열 조합으로 만든 쿼리를 실행합니다. 파라미터 바인딩을 사용하세요."
+    metadata: { cwe: "CWE-89", kisa: "SQL 삽입" }
+    patterns:
+      - pattern-either:
+          - pattern: $CUR.execute(f"...", ...)
+          - pattern: $CUR.execute("..." % $X, ...)
+          - pattern: $CUR.execute("..." + $X, ...)
+          - pattern: $CUR.execute("...".format(...), ...)
+          - pattern: sqlalchemy.text(f"...")
+          - pattern: |
+              $Q = f"..."
+              ...
+              $CUR.execute($Q, ...)
+          - pattern: |
+              $Q = "..." + $X
+              ...
+              $CUR.execute($Q, ...)
+
+  - id: TC-CMD-001
+    languages: [python]
+    severity: ERROR
+    message: "운영체제 명령어 삽입: shell=True 또는 os.system 에 동적 명령어가 전달됩니다."
+    metadata: { cwe: "CWE-78", kisa: "운영체제 명령어 삽입" }
+    pattern-either:
+      - patterns:
+          - pattern: os.system($CMD)
+          - pattern-not: os.system("...")
+      - patterns:
+          - pattern: subprocess.$F($CMD, ..., shell=True, ...)
+          - pattern-not: subprocess.$F("...", ..., shell=True, ...)
+
+  - id: TC-CODE-001
+    languages: [python]
+    severity: ERROR
+    message: "코드 삽입: eval/exec 에 동적 값이 전달됩니다."
+    metadata: { cwe: "CWE-95", kisa: "코드 삽입" }
+    patterns:
+      - pattern-either:
+          - pattern: eval($X)
+          - pattern: exec($X)
+      - pattern-not: eval("...")
+      - pattern-not: exec("...")
+
+  - id: TC-DESER-001
+    languages: [python]
+    severity: ERROR
+    message: "신뢰할 수 없는 데이터의 역직렬화: pickle 계열 로드는 임의 코드를 실행할 수 있습니다."
+    metadata: { cwe: "CWE-502", kisa: "신뢰할 수 없는 데이터의 역직렬화" }
+    pattern-either:
+      - pattern: pickle.load(...)
+      - pattern: pickle.loads(...)
+      - pattern: joblib.load(...)
+      - pattern: dill.load(...)
+      - pattern: pandas.read_pickle(...)
+      - patterns:
+          - pattern: yaml.load(...)
+          - pattern-not: yaml.load(..., Loader=yaml.SafeLoader, ...)
+          - pattern-not: yaml.load(..., Loader=yaml.CSafeLoader, ...)
+      - patterns:
+          - pattern: torch.load(...)
+          - pattern-not: torch.load(..., weights_only=True, ...)
+
+  - id: TC-TLS-001
+    languages: [python]
+    severity: ERROR
+    message: "부적절한 인증서 유효성 검증: verify=False"
+    metadata: { cwe: "CWE-295", kisa: "부적절한 인증서 유효성 검증" }
+    pattern: $F(..., verify=False, ...)
+
+  - id: TC-CRYPTO-001
+    languages: [python]
+    severity: WARNING
+    message: "취약한 암호화 알고리즘 사용: MD5/SHA-1"
+    metadata: { cwe: "CWE-327", kisa: "취약한 암호화 알고리즘 사용" }
+    patterns:
+      - pattern-either:
+          - pattern: hashlib.md5(...)
+          - pattern: hashlib.sha1(...)
+      - pattern-not: hashlib.$H(..., usedforsecurity=False, ...)
+
+  - id: TC-DEBUG-001
+    languages: [python]
+    severity: WARNING
+    message: "제거되지 않고 남은 디버그 코드: debug=True"
+    metadata: { cwe: "CWE-489", kisa: "제거되지 않고 남은 디버그 코드" }
+    pattern: $APP.run(..., debug=True, ...)

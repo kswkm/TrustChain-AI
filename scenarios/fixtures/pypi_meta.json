@@ -1,0 +1,7 @@
+{
+  "fastapi": {"exists": true, "latest_version": "0.115.6", "age_days": 2500, "release_count": 260, "maintainer_count": 2, "description_len": 20000, "has_wheel": true, "repository": "github.com/fastapi/fastapi"},
+  "numpy": {"exists": true, "latest_version": "1.26.4", "age_days": 6500, "release_count": 110, "maintainer_count": 3, "description_len": 3000, "has_wheel": true, "repository": "github.com/numpy/numpy"},
+  "requests": {"exists": true, "latest_version": "2.32.3", "age_days": 5000, "release_count": 150, "maintainer_count": 2, "description_len": 4000, "has_wheel": true, "repository": "github.com/psf/requests"},
+  "reqeusts": {"exists": true, "latest_version": "2.31.0", "age_days": 2, "release_count": 1, "maintainer_count": 0, "description_len": 12, "has_wheel": false, "repository": null},
+  "fastapi-auth-shield": {"exists": false}
+}

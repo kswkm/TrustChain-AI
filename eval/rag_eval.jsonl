@@ -1,0 +1,33 @@
+// TrustChain AI RAG 평가셋 v1 - relevant 는 정답 청크 ID 접두사 (doc_id:절번호:)
+{"question": "SQL 쿼리에 사용자 입력을 f-string 으로 넣으면 안 되는 이유와 대안은?", "relevant": ["kisa:input_validation:0:"], "keywords": ["바인딩"]}
+{"question": "파라미터 바인딩은 어떻게 사용하나요?", "relevant": ["kisa:input_validation:0:"], "keywords": ["execute"]}
+{"question": "subprocess 에서 shell=True 를 쓰면 어떤 문제가 생기나요?", "relevant": ["kisa:input_validation:1:"], "keywords": ["리스트"]}
+{"question": "사용자가 보낸 수식을 eval 로 계산해도 되나요?", "relevant": ["kisa:input_validation:2:"], "keywords": ["literal_eval"]}
+{"question": "업로드 파일명에 ../ 가 들어오는 공격은 어떻게 막나요?", "relevant": ["kisa:input_validation:3:"], "keywords": ["basename"]}
+{"question": "FastAPI 에서 요청 본문을 dict 로 받으면 안 되는 이유", "relevant": ["kisa:input_validation:4:"], "keywords": ["pydantic"]}
+{"question": "외부 XML 파싱 시 XXE 공격을 막는 방법", "relevant": ["kisa:input_validation:5:"], "keywords": ["defusedxml"]}
+{"question": "코드에 DB 비밀번호를 적어 두면 어떤 위험이 있고 어떻게 바꿔야 하나요?", "relevant": ["kisa:security_features:0:"], "keywords": ["환경변수"]}
+{"question": "이미 GitHub 에 커밋해 버린 API 토큰은 어떻게 처리해야 하나요?", "relevant": ["kisa:security_features:0:"], "keywords": ["폐기"]}
+{"question": "pickle.loads 를 신뢰할 수 없는 데이터에 쓰면 왜 위험한가요?", "relevant": ["kisa:security_features:1:"], "keywords": ["__reduce__"]}
+{"question": "yaml.load 대신 무엇을 써야 하나요?", "relevant": ["kisa:security_features:1:"], "keywords": ["safe_load"]}
+{"question": "MD5 로 비밀번호를 해시해도 되나요?", "relevant": ["kisa:security_features:2:"], "keywords": ["bcrypt"]}
+{"question": "비밀번호 재설정 토큰을 random 모듈로 만들어도 되나요?", "relevant": ["kisa:security_features:3:"], "keywords": ["secrets"]}
+{"question": "requests 에서 verify=False 를 쓰면 생기는 문제", "relevant": ["kisa:security_features:4:"], "keywords": ["중간자"]}
+{"question": "로그에 토큰이나 이메일이 남지 않게 하려면?", "relevant": ["kisa:security_features:5:"], "keywords": ["마스킹"]}
+{"question": "curl 로 받은 설치 스크립트를 바로 sh 로 실행하는 것이 위험한 이유", "relevant": ["kisa:security_features:6:"], "keywords": ["체크섬"]}
+{"question": "예외 메시지를 API 응답에 그대로 돌려주면 안 되나요?", "relevant": ["kisa:error_encapsulation:0:"], "keywords": ["로그"]}
+{"question": "Flask 를 debug=True 로 운영하면 어떻게 되나요?", "relevant": ["kisa:error_encapsulation:1:"], "keywords": ["디버거"]}
+{"question": "tempfile.mktemp 대신 무엇을 사용해야 하나요?", "relevant": ["kisa:error_encapsulation:2:"], "keywords": ["mkstemp"]}
+{"question": "AI 코딩 도구가 추천한 패키지가 PyPI 에 없으면 어떤 위험이 있나요?", "relevant": ["supply:supply_chain:0:"], "keywords": ["선점"]}
+{"question": "reqeusts 처럼 이름이 비슷한 패키지를 설치하면 무슨 일이 생기나요?", "relevant": ["supply:supply_chain:1:"], "keywords": ["타이포스쿼팅"]}
+{"question": "의존성 신뢰 점수는 어떤 요소로 계산되나요?", "relevant": ["supply:supply_chain:2:"], "keywords": ["Scorecard"]}
+{"question": "허깅페이스에서 받은 .bin 모델에 악성 코드가 있을 수 있나요?", "relevant": ["supply:supply_chain:3:"], "keywords": ["safetensors"]}
+{"question": "SBOM 이 있으면 새 취약점이 발표됐을 때 무엇이 좋은가요?", "relevant": ["supply:supply_chain:4:"], "keywords": ["매칭"]}
+{"question": "keyless 서명은 서명 키를 어떻게 관리하나요?", "relevant": ["supply:supply_chain:5:"], "keywords": ["Fulcio"]}
+{"question": "xz Utils 백도어 사건에서 얻을 수 있는 교훈은?", "relevant": ["supply:supply_chain:6:"], "keywords": ["출처 증명"]}
+{"question": "CVE-2020-14343 PyYAML 취약점은 몇 버전으로 올려야 하나요?", "relevant": ["osv:PYSEC-2021-142"], "keywords": ["5.4"]}
+{"question": "CVE-2025-32434 torch.load weights_only 우회 취약점 조치 방법", "relevant": ["osv:GHSA-53q9-r3pm-6pq6"], "keywords": ["2.6.0"]}
+{"question": "urllib3 가 리다이렉트할 때 Cookie 헤더가 유출되는 취약점", "relevant": ["osv:GHSA-v845-jxx5-vc9f"], "keywords": ["urllib3"]}
+{"question": "Jinja 샌드박스 탈출 취약점 CVE-2024-56326 을 해결하는 버전은?", "relevant": ["osv:GHSA-q2x7-8rv6-6q7h"], "keywords": ["3.1.5"]}
+{"question": "requests Session 에서 verify=False 이후 인증서 검증이 계속 꺼지는 문제", "relevant": ["osv:GHSA-9wx4-h78v-vm56"], "keywords": ["2.32.0"]}
+{"question": "llama-cpp-python 의 원격 코드 실행 취약점은 무엇 때문인가요?", "relevant": ["osv:GHSA-56xg-wfcc-g829"], "keywords": ["jinja2"]}

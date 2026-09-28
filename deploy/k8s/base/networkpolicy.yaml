@@ -1,0 +1,75 @@
+# 네트워크 최소 권한 : 기본 전면 차단 후 필요한 흐름만 허용
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: default-deny, namespace: trustchain }
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: allow-dns, namespace: trustchain }
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to: [{ namespaceSelector: {}, podSelector: { matchLabels: { k8s-app: kube-dns } } }]
+      ports: [{ protocol: UDP, port: 53 }, { protocol: TCP, port: 53 }]
+---
+# postgres 는 API·피드 모니터에서만 접근
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: postgres-ingress, namespace: trustchain }
+spec:
+  podSelector: { matchLabels: { app: postgres } }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector: { matchLabels: { app: trustchain-api } }
+        - podSelector: { matchLabels: { app: feed-monitor } }
+      ports: [{ port: 5432 }]
+---
+# API : 대시보드·CI(인그레스 컨트롤러) 에서 접근, postgres 와 외부 HTTPS(OSV·NVD·LLM·Slack) 로만 나감
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: api, namespace: trustchain }
+spec:
+  podSelector: { matchLabels: { app: trustchain-api } }
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector: { matchLabels: { app: trustchain-dashboard } }
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: ingress-nginx } }
+      ports: [{ port: 8000 }]
+  egress:
+    - to: [{ podSelector: { matchLabels: { app: postgres } } }]
+      ports: [{ port: 5432 }]
+    - to:
+        - ipBlock: { cidr: 0.0.0.0/0, except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16] }
+      ports: [{ protocol: TCP, port: 443 }]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: feed-monitor, namespace: trustchain }
+spec:
+  podSelector: { matchLabels: { app: feed-monitor } }
+  policyTypes: [Egress]
+  egress:
+    - to: [{ podSelector: { matchLabels: { app: postgres } } }]
+      ports: [{ port: 5432 }]
+    - to:
+        - ipBlock: { cidr: 0.0.0.0/0, except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16] }
+      ports: [{ protocol: TCP, port: 443 }]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: dashboard, namespace: trustchain }
+spec:
+  podSelector: { matchLabels: { app: trustchain-dashboard } }
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from: [{ namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: ingress-nginx } } }]
+      ports: [{ port: 8501 }]
+  egress:
+    - to: [{ podSelector: { matchLabels: { app: trustchain-api } } }]
+      ports: [{ port: 8000 }]

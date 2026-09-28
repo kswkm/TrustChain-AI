@@ -1,0 +1,65 @@
+# F9. Kyverno Admission Control : 서명·SLSA 출처 증명·SBOM 증명이 없는 이미지의 Pod 생성을 거부한다.
+# CD 의 Verify Gate 를 우회해 kubectl 로 직접 배포해도 이 정책에서 차단된다 (시나리오 7).
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: trustchain-verify-images
+  annotations:
+    policies.kyverno.io/title: TrustChain 이미지 서명·출처 검증
+    policies.kyverno.io/severity: high
+spec:
+  validationFailureAction: Enforce
+  webhookTimeoutSeconds: 30
+  background: false
+  rules:
+    - name: verify-signature-provenance-sbom
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaceSelector:
+                matchLabels:
+                  trustchain.dev/verify-images: "true"
+      verifyImages:
+        - imageReferences:
+            - "ghcr.io/trustchain-ai/*"
+          mutateDigest: true # 태그로 요청해도 검증된 digest 로 고정
+          verifyDigest: true
+          required: true
+          attestors:
+            - entries:
+                - keyless:
+                    # 서명 주체 = TrustChain 재사용 CI 워크플로우, main 브랜치 또는 릴리스 태그
+                    subjectRegExp: "^https://github\\.com/trustchain-ai/trustchain-ai/\\.github/workflows/trustchain-ci\\.yml@refs/(heads/main|tags/v.+)$"
+                    issuer: "https://token.actions.githubusercontent.com"
+                    rekor:
+                      url: https://rekor.sigstore.dev
+          attestations:
+            # SLSA Build L3 : slsa-github-generator 컨테이너 생성기가 만든 출처 증명
+            - type: https://slsa.dev/provenance/v0.2
+              attestors:
+                - entries:
+                    - keyless:
+                        subjectRegExp: "^https://github\\.com/slsa-framework/slsa-github-generator/\\.github/workflows/generator_container_slsa3\\.yml@refs/tags/v[0-9].*$"
+                        issuer: "https://token.actions.githubusercontent.com"
+                        rekor:
+                          url: https://rekor.sigstore.dev
+              conditions:
+                - all:
+                    - key: "{{ invocation.configSource.uri }}"
+                      operator: Equals
+                      value: "git+https://github.com/trustchain-ai/trustchain-ai@refs/heads/main"
+            # CycloneDX SBOM 증명
+            - type: https://cyclonedx.org/bom
+              attestors:
+                - entries:
+                    - keyless:
+                        subjectRegExp: "^https://github\\.com/trustchain-ai/trustchain-ai/\\.github/workflows/trustchain-ci\\.yml@refs/(heads/main|tags/v.+)$"
+                        issuer: "https://token.actions.githubusercontent.com"
+                        rekor:
+                          url: https://rekor.sigstore.dev
+              conditions:
+                - all:
+                    - key: "{{ length(components) }}"
+                      operator: GreaterThan
+                      value: 0

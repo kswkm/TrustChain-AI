@@ -1,0 +1,11 @@
+.git
+.venv
+.pytest_cache
+.ruff_cache
+.trustchain-cache
+.secrets
+**/__pycache__
+reports
+demo
+tests
+scenarios

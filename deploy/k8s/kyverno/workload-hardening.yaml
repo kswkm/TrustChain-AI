@@ -1,0 +1,50 @@
+# F9. 워크로드 보안 설정 강제 : digest 없는 이미지·latest 태그·권한 상승 차단
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: trustchain-workload-hardening
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: require-image-digest
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaces: [app, trustchain]
+      validate:
+        message: "이미지는 digest(@sha256:...)로 지정해야 합니다."
+        pattern:
+          spec:
+            containers:
+              - image: "*@sha256:*"
+    - name: disallow-privilege-escalation
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaces: [app, trustchain]
+      validate:
+        message: "allowPrivilegeEscalation: false, runAsNonRoot: true 가 필요합니다."
+        pattern:
+          spec:
+            =(securityContext):
+              =(runAsNonRoot): true
+            containers:
+              - securityContext:
+                  allowPrivilegeEscalation: false
+    - name: require-resource-limits
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaces: [app, trustchain]
+      validate:
+        message: "메모리 limit 이 필요합니다."
+        pattern:
+          spec:
+            containers:
+              - resources:
+                  limits:
+                    memory: "?*"

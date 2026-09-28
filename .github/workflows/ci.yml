@@ -1,0 +1,78 @@
+# TrustChain AI 자체 CI : 테스트 → 자기 자신에 대한 점검(dogfooding) → 플랫폼·시연 이미지를 자체 파이프라인으로 빌드·서명
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions: {}
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.3.0
+        with:
+          python-version: "3.11"
+      - run: pip install -e ".[dev]"
+      - name: 린트 (ruff, bandit 계열 S 룰 포함)
+        run: ruff check src tests
+      - name: 단위 테스트
+        run: pytest -q
+      - name: dogfooding - 플랫폼 소스에 자체 점검 적용
+        run: trustchain check src --no-packages --no-external
+      - name: 공급망 공격 시나리오 (로컬 재현 가능한 5종)
+        run: python scenarios/run_all.py --offline
+      - name: RAG 평가 (오프라인 임베딩 기준선)
+        env:
+          TRUSTCHAIN_EMBEDDER: hashing
+          TRUSTCHAIN_RERANKER: lexical
+        run: trustchain eval --offline-models --answers -o rag-eval.json
+      - uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b # v4.5.0
+        with:
+          name: rag-eval
+          path: rag-eval.json
+
+  platform:
+    if: github.event_name == 'push'
+    needs: test
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      actions: read
+      security-events: write
+    uses: ./.github/workflows/trustchain-ci.yml
+    with:
+      context: "."
+      service: trustchain-platform
+      trustchain-ref: ${{ github.sha }}
+
+  demo:
+    if: github.event_name == 'push'
+    needs: test
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      actions: read
+      security-events: write
+    uses: ./.github/workflows/trustchain-ci.yml
+    with:
+      context: demo/mnist-api
+      service: mnist-api
+      prepare-command: pip install tensorflow-cpu==2.18.0 && python train.py
+      trustchain-ref: ${{ github.sha }}
+      trustchain-api: ${{ vars.TRUSTCHAIN_API }}
+    secrets:
+      trustchain-token: ${{ secrets.TRUSTCHAIN_TOKEN }}

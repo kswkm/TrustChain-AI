@@ -1,0 +1,17 @@
+# Pod Security Admission 'restricted' 적용 : 특권·hostPath·root 실행 등 기본 차단
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: trustchain
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: app
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+    trustchain.dev/verify-images: "true"

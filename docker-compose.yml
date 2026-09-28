@@ -1,0 +1,56 @@
+# 로컬 시연 환경 : PostgreSQL(pgvector) + 수집 API + 대시보드
+#   1) printf '%s' "<임의 비밀번호>" > .secrets/pg_password   (저장소에 커밋하지 않음 - .gitignore)
+#   2) docker compose up -d --build
+#   3) docker compose exec api sh -c 'TRUSTCHAIN_DATABASE_URL=postgresql+psycopg://trustchain:$(cat /run/secrets/pg_password)@db:5432/trustchain \n#        trustchain token --name dashboard --role reader'   → 출력된 토큰을 .secrets/dashboard_token 에 저장
+#   4) docker compose restart dashboard   → http://localhost:8501
+services:
+  db:
+    image: docker.io/pgvector/pgvector@sha256:ccc6e83d6e35e931dc7c5def2022729d5a6c370318d099181995567ff1fb4d6b # pg16
+    environment:
+      POSTGRES_DB: trustchain
+      POSTGRES_USER: trustchain
+      POSTGRES_PASSWORD_FILE: /run/secrets/pg_password
+    secrets: [pg_password]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U trustchain"]
+      interval: 5s
+      retries: 10
+
+  api:
+    build: .
+    depends_on:
+      db: { condition: service_healthy }
+    secrets: [pg_password]
+    # 비밀번호는 파일 시크릿에서 읽어 DATABASE_URL 을 구성한다 (환경변수·이미지에 남기지 않음)
+    entrypoint: ["/bin/sh", "-c", "export TRUSTCHAIN_DATABASE_URL=postgresql+psycopg://trustchain:$$(cat /run/secrets/pg_password)@db:5432/trustchain && exec trustchain server --host 0.0.0.0 --port 8000"]
+    environment:
+      TRUSTCHAIN_SCHEDULER: "1"
+      TRUSTCHAIN_FEED_INTERVAL_MIN: "10"
+    ports: ["127.0.0.1:8000:8000"]
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+
+  dashboard:
+    build: .
+    depends_on: [api]
+    secrets: [dashboard_token]
+    entrypoint: ["/bin/sh", "-c", "export TRUSTCHAIN_TOKEN=$$(cat /run/secrets/dashboard_token 2>/dev/null) && exec streamlit run /opt/venv/lib/python3.11/site-packages/trustchain/dashboard/app.py --server.port=8501 --server.address=0.0.0.0 --browser.gatherUsageStats=false"]
+    environment:
+      TRUSTCHAIN_API: http://api:8000
+    ports: ["127.0.0.1:8501:8501"]
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+
+secrets:
+  pg_password:
+    file: ./.secrets/pg_password
+  dashboard_token:
+    file: ./.secrets/dashboard_token
+
+volumes:
+  pgdata:

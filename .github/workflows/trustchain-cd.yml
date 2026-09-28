@@ -1,0 +1,140 @@
+# TrustChain AI 재사용 CD 워크플로우 (F8 Verify Gate → 배포)
+#   서명(cosign keyless)·SLSA 출처 증명·SBOM 증명을 검증한 digest 만 Kubernetes 에 배포한다.
+#   클러스터 안에서는 Kyverno 정책(F9)이 같은 검증을 한 번 더 수행한다.
+#
+# 클러스터 인증
+#   - cluster-auth: kubeconfig  → secrets.kubeconfig (k3s 시연 환경)
+#   - cluster-auth: aws-oidc    → OIDC 로 IAM Role 을 맡아 단기 자격증명 사용 (장기 키 없음)
+name: trustchain-cd
+
+on:
+  workflow_call:
+    inputs:
+      image:
+        description: "ghcr.io/owner/name"
+        type: string
+        required: true
+      digest:
+        description: "sha256:..."
+        type: string
+        required: true
+      service:
+        type: string
+        required: true
+      namespace:
+        type: string
+        default: "app"
+      deployment:
+        description: "Deployment 이름"
+        type: string
+        required: true
+      container:
+        type: string
+        default: "app"
+      source-repo:
+        description: "서명 주체 저장소 (기본: 호출 저장소)"
+        type: string
+        default: ""
+      branch:
+        type: string
+        default: "main"
+      signer-workflow:
+        description: "서명한 재사용 워크플로우 경로"
+        type: string
+        default: ".github/workflows/trustchain-ci.yml"
+      signer-repo:
+        description: "재사용 워크플로우가 있는 저장소 (서명 인증서 SAN)"
+        type: string
+        default: "trustchain-ai/trustchain-ai"
+      cluster-auth:
+        type: string
+        default: "kubeconfig"
+      aws-role-arn:
+        type: string
+        default: ""
+      aws-region:
+        type: string
+        default: "ap-northeast-2"
+      eks-cluster:
+        type: string
+        default: ""
+      trustchain-ref:
+        type: string
+        default: "main"
+      trustchain-api:
+        type: string
+        default: ""
+    secrets:
+      kubeconfig:
+        required: false
+      trustchain-token:
+        required: false
+
+permissions: {}
+
+jobs:
+  verify:
+    name: Verify Gate (서명·출처 증명·SBOM)
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.3.0
+        with:
+          python-version: "3.11"
+      - run: pip install "trustchain-ai @ git+https://github.com/trustchain-ai/trustchain-ai@${{ inputs.trustchain-ref }}"
+      - uses: sigstore/cosign-installer@dc72c7d5c4d10cd6bcb8cf6e3fd625a9e5e537da # v3.7.0
+      - uses: slsa-framework/slsa-verifier/actions/installer@3714a2a4684014deb874a0e737dffa0ee02dd647 # v2.6.0
+      - uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: trustchain verify
+        env:
+          TRUSTCHAIN_TOKEN: ${{ secrets.trustchain-token }}
+        run: |
+          repo="${{ inputs.source-repo }}"; [ -z "$repo" ] && repo="github.com/${{ github.repository }}"
+          # 서명 인증서 SAN 은 재사용 워크플로우 경로이므로 signer-repo 기준 정규식, 저장소 클레임은 호출 저장소
+          cat > trustchain.toml <<EOF
+          [provenance]
+          source_repo = "$repo"
+          branch = "${{ inputs.branch }}"
+          workflow_path = "${{ inputs.signer-workflow }}"
+          signer_repo = "github.com/${{ inputs.signer-repo }}"
+          EOF
+          args=(verify "${{ inputs.image }}@${{ inputs.digest }}" --require-aibom --format text)
+          [ -n "${{ inputs.trustchain-api }}" ] && args+=(--report-to "${{ inputs.trustchain-api }}" --service "${{ inputs.service }}")
+          trustchain "${args[@]}"
+
+  deploy:
+    name: 배포 (digest 지정)
+    needs: verify
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      id-token: write # 클라우드 OIDC 인증
+    steps:
+      - uses: azure/setup-kubectl@3e0aec4d80787158d308d7b364cb1b702e7feb7f # v4.0.0
+      - name: 클라우드 OIDC 인증 (AWS EKS)
+        if: inputs.cluster-auth == 'aws-oidc'
+        uses: aws-actions/configure-aws-credentials@e3dd6a429d7300a6a4c196c26e071d42e0343502 # v4.0.2
+        with:
+          role-to-assume: ${{ inputs.aws-role-arn }}
+          aws-region: ${{ inputs.aws-region }}
+      - name: kubeconfig 구성
+        env:
+          KUBECONFIG_DATA: ${{ secrets.kubeconfig }}
+        run: |
+          mkdir -p ~/.kube && umask 077
+          if [ "${{ inputs.cluster-auth }}" = "aws-oidc" ]; then
+            aws eks update-kubeconfig --name "${{ inputs.eks-cluster }}" --region "${{ inputs.aws-region }}"
+          else
+            printf '%s' "$KUBECONFIG_DATA" > ~/.kube/config
+          fi
+      - name: digest 로 이미지 교체
+        run: |
+          kubectl -n "${{ inputs.namespace }}" set image "deployment/${{ inputs.deployment }}" \
+            "${{ inputs.container }}=${{ inputs.image }}@${{ inputs.digest }}"
+          kubectl -n "${{ inputs.namespace }}" rollout status "deployment/${{ inputs.deployment }}" --timeout=180s

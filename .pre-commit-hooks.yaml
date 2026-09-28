@@ -1,0 +1,20 @@
+# 다른 저장소의 .pre-commit-config.yaml 에서 사용:
+#   repos:
+#     - repo: https://github.com/trustchain-ai/trustchain-ai
+#       rev: <commit-sha>
+#       hooks:
+#         - id: trustchain-check
+- id: trustchain-check
+  name: TrustChain AI 시큐어코딩·패키지 점검
+  description: KISA 시큐어코딩 룰, 환각·타이포스쿼팅 패키지 판정, 비밀정보 탐지
+  entry: trustchain check
+  language: python
+  pass_filenames: true
+  types_or: [python, text, toml, yaml]
+  require_serial: true
+- id: trustchain-pkg-strict
+  name: TrustChain AI 패키지 판정 (주의 포함 차단)
+  entry: trustchain check --strict-packages
+  language: python
+  files: (requirements.*\.txt|pyproject\.toml)$
+  pass_filenames: false

@@ -1,0 +1,31 @@
+# TrustChain AI 설정 예시 : 프로젝트 루트에 trustchain.toml 로 복사하거나
+# pyproject.toml 의 [tool.trustchain] 아래에 같은 키를 둔다. 설정이 없으면 아래 기본값으로 동작한다.
+
+# 점검 제외 경로
+exclude = [".git", ".venv", "venv", "node_modules", "__pycache__", "build", "dist"]
+# 사내 패키지 등 판정 예외
+allow_packages = []
+# 비활성화할 룰 ID
+disabled_rules = []
+# AI-BOM 을 만들 때 모델 파일을 찾을 디렉터리
+model_dirs = ["models", "model"]
+# 이 심각도 미만은 보고하지 않음
+min_severity = "LOW"
+
+[gate]
+# 심각도별 허용 건수 (초과 시 게이트 실패). 기본: CRITICAL 1건 이상이면 빌드 중단
+max_critical = 0
+max_high = 1000000
+max_medium = 1000000
+# 패키지 판정 '차단' 이면 실패
+block_on_package_verdict = true
+# 의존성 신뢰 점수 하한 (0 = 비활성)
+min_trust_score = 0
+
+[provenance]
+# Verify Gate 가 요구하는 빌드 출처
+source_repo = "github.com/your-org/your-repo"
+branch = "main"
+workflow_path = ".github/workflows/trustchain-ci.yml"
+# 재사용 워크플로우로 서명했다면 그 저장소 (Fulcio 인증서 SAN)
+signer_repo = "github.com/trustchain-ai/trustchain-ai"
