@@ -1,0 +1,33 @@
+{
+ "trained_at": "2026-09-30T15:36:55+00:00",
+ "seed": 7,
+ "n_train": 1422,
+ "dataset": "trustchain synthetic typosquat set v1 (base-name split 70/30)",
+ "tensorflow": "2.18.0",
+ "keras": "3.15.1",
+ "sha256": "7af1e768d9f0a343fa9baa7def1c2d1b520f1cbae89afeee3af09734c7c9c101",
+ "eval": {
+  "n": 576,
+  "정상": {
+   "precision": 0.995,
+   "recall": 1.0,
+   "f1": 0.9975,
+   "support": 198
+  },
+  "주의": {
+   "precision": 0.9681,
+   "recall": 1.0,
+   "f1": 0.9838,
+   "support": 91
+  },
+  "차단": {
+   "precision": 1.0,
+   "recall": 0.9861,
+   "f1": 0.993,
+   "support": 287
+  },
+  "macro_f1": 0.9914,
+  "risk_detection_f1": 0.9987,
+  "accuracy": 0.9931
+ }
+}
