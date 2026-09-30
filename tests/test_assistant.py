@@ -82,6 +82,19 @@ def test_prioritize_uses_reachability():
     assert "코드에서 실제 import 됨" in pr[0]["reasons"]
 
 
+def test_prioritize_maps_import_names_to_distributions():
+    # collect_imports 는 import 이름(yaml, PIL)만 돌려준다 → 배포 패키지 이름(PyYAML, Pillow)과 매칭돼야 한다
+    findings = [
+        {"rule_id": "A", "severity": "CRITICAL", "category": "dependency", "extra": {"package": "PyYAML"}},
+        {"rule_id": "B", "severity": "HIGH", "category": "dependency", "extra": {"package": "pillow"}},
+        {"rule_id": "C", "severity": "HIGH", "category": "dependency", "extra": {"package": "urllib3"}},
+    ]
+    pr = {p["id"]: p for p in prioritize(findings, used_modules={"yaml", "PIL"})}
+    assert "코드에서 실제 import 됨" in pr["A"]["reasons"]
+    assert "코드에서 실제 import 됨" in pr["B"]["reasons"]
+    assert "코드에서 import 하지 않음" in pr["C"]["reasons"]
+
+
 def test_pr_draft():
     findings = [{"rule_id": "PYSEC-2021-142", "category": "dependency",
                  "extra": {"package": "pyyaml", "version": "5.3.1", "fixed": ["5.4"]}},

@@ -13,8 +13,11 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
+from packaging.utils import canonicalize_name
+
 from trustchain.assistant.llm import LLM, ExtractiveLLM
 from trustchain.assistant.retriever import Hit, HybridRetriever
+from trustchain.packages.imports import candidate_distributions
 
 SYSTEM_PROMPT = """당신은 TrustChain AI 의 소프트웨어 공급망 보안 어시스턴트입니다.
 규칙:
@@ -114,7 +117,8 @@ BASE = {"CRITICAL": 9.5, "HIGH": 7.5, "MEDIUM": 5.0, "LOW": 2.5, "INFO": 0.5}
 def prioritize(findings: list[dict[str, Any]], used_modules: set[str] | None = None,
                internet_facing: bool = True) -> list[dict[str, Any]]:
     """심각도(CVSS) + 실제 사용 여부(import) + 노출 + 패치 가능 여부 + 유형 가중치로 우선순위를 매긴다."""
-    used = {m.lower().replace("_", "-") for m in (used_modules or set())}
+    # import 이름(yaml, PIL)을 배포 패키지 이름(pyyaml, pillow)으로 바꿔 SBOM 의 패키지명과 비교한다
+    used = {d for m in (used_modules or set()) for d in candidate_distributions(m)}
     out = []
     for f in findings:
         sev = str(f.get("severity", "MEDIUM"))
@@ -125,12 +129,13 @@ def prioritize(findings: list[dict[str, Any]], used_modules: set[str] | None = N
         cat = f.get("category", "")
         if cat == "dependency" and pkg:
             if used_modules is not None:
-                if pkg.lower() in used or pkg.lower().replace("python-", "") in used:
+                name = canonicalize_name(pkg)
+                if name in used or name.removeprefix("python-") in used:
                     score += 2.0
                     reasons.append("코드에서 실제 import 됨")
                 else:
                     score -= 2.0
-                    reasons.append("코드에서 직접 사용하지 않음(간접 의존성)")
+                    reasons.append("코드에서 import 하지 않음")
         if cat in ("package", "model") and sev in ("CRITICAL", "HIGH"):
             score += 1.5
             reasons.append("설치/로드 즉시 코드 실행 위험")
