@@ -123,3 +123,28 @@ def test_faithfulness():
 def test_log_masking():
     s = mask("token=ghp_" + "a" * 36 + " user kim@example.com Authorization: Bearer abc.def password=hunter2")
     assert "ghp_" not in s and "kim@example.com" not in s and "abc.def" not in s and "hunter2" not in s
+
+
+def test_anthropic_request_body(monkeypatch):
+    # Sonnet 5 계열은 temperature 등 샘플링 파라미터를 보내면 400 을 돌려준다
+    from trustchain.assistant import llm
+
+    sent = {}
+
+    class Resp:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"content": [{"type": "thinking", "thinking": ""}, {"type": "text", "text": "답변 [1]"}]}
+
+    def fake_post(url, headers, json, timeout):
+        sent.update(json)
+        return Resp()
+
+    monkeypatch.delenv("TRUSTCHAIN_LLM_MODEL", raising=False)
+    monkeypatch.setattr(llm.httpx, "post", fake_post)
+    assert llm.AnthropicLLM("k").complete("sys", "q") == "답변 [1]"
+    assert sent["model"] == "claude-sonnet-5-5"
+    assert "temperature" not in sent
+    assert sent["max_tokens"] >= 16000  # 기본 사고(thinking) 토큰에 본문이 잘리지 않도록
