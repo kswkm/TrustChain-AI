@@ -11,16 +11,19 @@
 
 from __future__ import annotations
 
+import json
 import random
 import string
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 from trustchain.packages.classifier import FEATURE_NAMES, LABELS, LinearModel, feature_vector
 from trustchain.packages.pypi import PackageMeta
 from trustchain.packages.typosquat import ADJ, name_features, osa_distance, popular_packages
 
 NOW = datetime(2026, 1, 1, tzinfo=timezone.utc)
+DATASET = "trustchain synthetic typosquat set v1 (base-name split 70/30)"
 
 
 def _mutate(name: str, rng: random.Random) -> str:
@@ -164,14 +167,14 @@ def train_linear(train: list[Sample], epochs: int = 3000, lr: float = 0.5, l2: f
     return LinearModel(W.round(5).tolist(), b.round(5).tolist())
 
 
-def train_keras(train: list[Sample], out_path: str) -> str:
+def train_keras(train: list[Sample], out_path: str, seed: int = 7) -> str:
     """TensorFlow(Keras) 분류 모델 학습 → .keras 저장 + SHA-256 사이드카."""
     import hashlib
-    from pathlib import Path
 
     import keras
     import numpy as np
 
+    keras.utils.set_random_seed(seed)  # 가중치 초기화·드롭아웃·셔플 재현
     X = np.array([s.x for s in train], dtype="float32")
     y = np.array([s.label for s in train])
     model = keras.Sequential(
@@ -227,15 +230,21 @@ def train_and_save(out_path: str, backend: str = "linear", seed: int = 7) -> dic
     samples = build_dataset(seed=seed)
     train, test = split(samples, seed=seed)
     if backend == "keras":
+        import keras
+        import tensorflow as tf
+
         from trustchain.packages.classifier import KerasModel
 
-        train_keras(train, out_path)
-        model = KerasModel(out_path)
-        report = evaluate(model, test)
+        digest = train_keras(train, out_path, seed=seed)
+        report = evaluate(KerasModel(out_path), test)
+        # .keras 에는 메타를 둘 수 없으므로 평가 기록은 옆 JSON 에 남긴다
+        meta = {"trained_at": datetime.now(timezone.utc).isoformat(timespec="seconds"), "seed": seed, "n_train": len(train), "dataset": DATASET,
+                "tensorflow": tf.__version__, "keras": keras.__version__, "sha256": digest, "eval": report}
+        Path(out_path + ".json").write_text(json.dumps(meta, ensure_ascii=False, indent=1), encoding="utf-8")
     else:
         model = train_linear(train)
         report = evaluate(model, test)
         model.meta = {"trained_at": NOW.isoformat(), "seed": seed, "n_train": len(train), "eval": report,
-                      "dataset": "trustchain synthetic typosquat set v1 (base-name split 70/30)"}
+                      "dataset": DATASET}
         model.save(out_path)
     return report

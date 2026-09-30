@@ -122,18 +122,24 @@ class KerasModel:
 
         self.model = keras.saving.load_model(path, safe_mode=True, compile=False)
 
-    def predict_proba(self, x: list[float]) -> list[float]:
+    def _infer(self, rows: list[list[float]]) -> list[list[float]]:
         import numpy as np
 
-        return [float(v) for v in self.model.predict(np.array([x], dtype="float32"), verbose=0)[0]]
+        # model.predict 는 호출마다 데이터 파이프라인을 만들어 느리다 → 직접 호출
+        out = self.model(np.array(rows, dtype="float32"), training=False)
+        return [[float(v) for v in r] for r in np.asarray(out)]
+
+    def predict_proba(self, x: list[float]) -> list[float]:
+        return self._infer([x])[0]
+
+    def _contributions(self, x: list[float], cls_idx: int) -> list[float]:
+        """특징 i 를 0 으로 바꿨을 때 판정 클래스 확률 감소량. 원본 + 12개 변형을 한 번에 추론."""
+        rows = [list(x)] + [[0.0 if j == i else v for j, v in enumerate(x)] for i in range(len(x))]
+        probs = self._infer(rows)
+        return [probs[0][cls_idx] - p[cls_idx] for p in probs[1:]]
 
     def explain(self, x: list[float], cls_idx: int, top: int = 3) -> list[str]:
-        base = self.predict_proba(x)[cls_idx]
-        scores = []
-        for i in range(len(x)):
-            x2 = list(x)
-            x2[i] = 0.0
-            scores.append((FEATURE_NAMES[i], base - self.predict_proba(x2)[cls_idx]))
+        scores = list(zip(FEATURE_NAMES, self._contributions(x, cls_idx)))
         scores.sort(key=lambda t: -t[1])
         return [FEATURE_KO[n] for n, c in scores[:top] if c > 0.02]
 
