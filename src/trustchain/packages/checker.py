@@ -11,7 +11,7 @@ from packaging.utils import canonicalize_name
 
 from trustchain.core.config import Config
 from trustchain.core.findings import Finding, Severity
-from trustchain.packages.classifier import LinearModel, Prediction, feature_vector, predict
+from trustchain.packages.classifier import KerasModel, LinearModel, Prediction, feature_vector, load_default_model, predict
 from trustchain.packages.imports import IMPORT_MAP, candidate_distributions, collect_imports
 from trustchain.packages.osv import OSVClient, Vuln
 from trustchain.packages.pypi import MetaSource, PackageMeta
@@ -46,6 +46,7 @@ class PackageVerdict:
     vulns: list[Vuln] = field(default_factory=list)
     source: str = ""
     line: int | None = None
+    model: str = ""  # 판정에 쓴 분류 모델
 
     def to_dict(self) -> dict:
         return {
@@ -56,7 +57,7 @@ class PackageVerdict:
             "trust_notes": self.trust.notes if self.trust else [],
             "vulns": [{"id": v.id, "severity": v.severity.value, "fixed": v.fixed_versions, "summary": v.summary}
                       for v in self.vulns],
-            "source": self.source, "line": self.line,
+            "source": self.source, "line": self.line, "model": self.model,
         }
 
 
@@ -74,14 +75,14 @@ class PackageChecker:
         pypi: MetaSource,
         osv: OSVClient | None = None,
         scorecard: ScorecardClient | None = None,
-        model: LinearModel | None = None,
+        model: LinearModel | KerasModel | None = None,
         now: datetime | None = None,
     ):
         self.cfg = cfg
         self.pypi = pypi
         self.osv = osv
         self.scorecard = scorecard
-        self.model = model or LinearModel.load_default()
+        self.model = model or load_default_model()
         self.now = now
         self.allow = {canonicalize_name(a) for a in cfg.allow_packages}
 
@@ -130,6 +131,7 @@ class PackageChecker:
         v.nearest_popular = nf.nearest
         pred: Prediction = predict(self.model, feature_vector(nf, meta, self.now))
         v.probs = pred.probs
+        v.model = pred.model
         if not nf.is_popular:
             v.verdict = _raise(v.verdict, pred.label)
             if pred.label != "정상":

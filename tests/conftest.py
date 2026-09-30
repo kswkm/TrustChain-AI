@@ -63,3 +63,9 @@ def fake_pypi() -> FakePyPI:
         "sklearn": legit("sklearn", release_count=3),
         "tiny-new-lib": malicious("tiny-new-lib"),
     })
+
+
+@pytest.fixture(autouse=True)
+def _linear_package_model(monkeypatch):
+    # 개발자 PC 에 keras 가 있어도 패키지 판정 테스트는 결정적인 선형 모델로 고정 (Keras 테스트는 개별 해제)
+    monkeypatch.setenv("TRUSTCHAIN_PKG_MODEL", "linear")

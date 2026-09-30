@@ -1,9 +1,9 @@
 """F2·F3 패키지 위험 분류 모델 : '정상 / 주의 / 차단' 3단계 판정과 판정 근거.
 
-- 기본 백엔드 : 학습된 다항 로지스틱 회귀 가중치(JSON)를 순수 파이썬으로 추론.
-  (CLI 가 numpy·TensorFlow 없이도 동작하도록)
-- Keras 백엔드 : `trustchain model train --backend keras` 로 학습한 .keras 모델.
-  pickle 을 쓰지 않는 .keras 형식을 safe_mode 로 로드하며, 로드 전에 SHA-256 을 검증한다.
+- 기본 : TensorFlow(Keras) 분류 모델 (data/package_model.keras). TensorFlow 가 설치된 환경(CI 게이트, `.[ml]`)에서 사용.
+  pickle 을 쓰지 않는 .keras 형식을 safe_mode 로 로드하며, 로드 전에 코드에 고정한 SHA-256 을 검증한다.
+- 경량 대체 : TensorFlow 가 없는 환경(가벼운 pre-commit)에서는 학습된 다항 로지스틱 회귀 가중치(JSON)를 순수 파이썬으로 추론.
+- TRUSTCHAIN_PKG_MODEL=keras|linear 로 강제할 수 있다 (keras 강제 시 TensorFlow 가 없으면 오류).
 """
 
 from __future__ import annotations
@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import os
 from dataclasses import dataclass, field
 from datetime import datetime
 from importlib import resources
@@ -20,6 +21,9 @@ from trustchain.packages.pypi import PackageMeta
 from trustchain.packages.typosquat import NameFeatures
 
 LABELS = ["정상", "주의", "차단"]
+KERAS_MODEL_FILE = "package_model.keras"
+# 탑재 모델 무결성 : 모델 파일과 사이드카를 함께 바꿔치기해도 통과하지 못하도록 해시를 코드에 고정한다
+KERAS_MODEL_SHA256 = "7af1e768d9f0a343fa9baa7def1c2d1b520f1cbae89afeee3af09734c7c9c101"
 FEATURE_NAMES = [
     "name_similarity", "inv_edit_distance", "keyboard_substitution", "homoglyph", "squat_pattern", "is_popular",
     "young_package", "few_releases", "no_maintainer", "short_description", "no_wheel", "no_repository",
@@ -64,10 +68,13 @@ class Prediction:
     label: str
     probs: dict[str, float]
     reasons: list[str] = field(default_factory=list)
+    model: str = ""
 
 
 class LinearModel:
     """softmax(W·x + b). 가중치는 JSON 으로 저장 (역직렬화 시 코드 실행 없음)."""
+
+    backend = "경량 선형 모델"
 
     def __init__(self, weights: list[list[float]], bias: list[float], meta: dict | None = None):
         self.W = weights  # [n_classes][n_features]
@@ -111,6 +118,8 @@ class LinearModel:
 
 
 class KerasModel:
+    backend = "TensorFlow(Keras)"
+
     def __init__(self, path: Path, expected_sha256: str | None = None):
         path = Path(path)
         digest = hashlib.sha256(path.read_bytes()).hexdigest()
@@ -147,4 +156,28 @@ class KerasModel:
 def predict(model: LinearModel | KerasModel, x: list[float]) -> Prediction:
     p = model.predict_proba(x)
     idx = max(range(len(p)), key=lambda i: p[i])
-    return Prediction(LABELS[idx], {LABELS[i]: round(p[i], 4) for i in range(len(p))}, model.explain(x, idx))
+    return Prediction(LABELS[idx], {LABELS[i]: round(p[i], 4) for i in range(len(p))}, model.explain(x, idx),
+                      model.backend)
+
+
+def load_default_model() -> LinearModel | KerasModel:
+    """TensorFlow(Keras 3) 가 있으면 탑재 Keras 모델, 없으면 경량 선형 모델. 해시 불일치는 대체 없이 오류."""
+    mode = os.environ.get("TRUSTCHAIN_PKG_MODEL", "").strip().lower()
+    if mode not in ("", "keras", "linear"):
+        raise ValueError(f"TRUSTCHAIN_PKG_MODEL 은 keras 또는 linear 여야 합니다: {mode!r}")
+    if mode == "linear":
+        return LinearModel.load_default()
+    os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "2")  # TF 로그가 CLI 출력에 섞이지 않도록
+    try:
+        import keras
+
+        major = int(str(keras.__version__).split(".")[0])
+    except (ImportError, AttributeError, ValueError):
+        major = 0
+    if major < 3:  # 미설치 또는 Keras 2 (.keras v3 형식을 읽지 못함)
+        if mode == "keras":
+            raise RuntimeError("TRUSTCHAIN_PKG_MODEL=keras 이지만 Keras 3 를 사용할 수 없습니다: "
+                               "pip install tensorflow-cpu==2.18.0")
+        return LinearModel.load_default()
+    with resources.as_file(resources.files("trustchain.data").joinpath(KERAS_MODEL_FILE)) as path:
+        return KerasModel(path, expected_sha256=KERAS_MODEL_SHA256)
