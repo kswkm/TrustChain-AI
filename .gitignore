@@ -16,3 +16,6 @@ demo/mnist-api/model/*.keras
 .secrets/
 trustchain.toml
 !trustchain.example.toml
+.trustchain-demo/
+# PowerShell 이 작업 디렉터리에 만드는 모듈 캐시
+Microsoft/
