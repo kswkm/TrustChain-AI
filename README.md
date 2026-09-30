@@ -25,6 +25,33 @@
 | | **F11** AI 보안 어시스턴트 (Kiwi BM25 + 벡터 RRF 하이브리드 검색, 리랭킹, 근거 인용, PR 초안) | [assistant/](src/trustchain/assistant) |
 | | **F12** 대시보드 · 알림 (Streamlit) | [dashboard/app.py](src/trustchain/dashboard/app.py) |
 
+## 심사용 3분 재현
+
+Python 3.11 이상만 있으면 됩니다 (Docker·PostgreSQL 불필요).
+
+```bash
+# 설치 — Linux/macOS
+python -m venv .venv && . .venv/bin/activate
+# 설치 — Windows (PowerShell)
+#   python -m venv .venv; .venv\Scripts\Activate.ps1
+pip install -e ".[dev,server,dashboard]"
+
+# ① 공급망 공격 시나리오 1~5 재현 → 어느 단계에서 차단되는지 표로 출력 (네트워크 불필요)
+python scenarios/run_all.py --offline
+
+# ② 수집 API + 시연 데이터 + 대시보드를 한 번에 실행 → http://localhost:8501 (Ctrl+C 로 종료)
+python scripts/demo.py              # 네트워크가 없으면: python scripts/demo.py --offline
+```
+
+대시보드에서 확인할 것
+
+| 탭 | 확인 포인트 |
+|---|---|
+| 서비스 신뢰 점수 | `legacy-api`(취약 버전 PyYAML·requests 고정, 하드코드 토큰)의 낮은 점수와 감점 내역, 발견 항목의 KISA 가이드 매핑 |
+| 취약점 알림 | SBOM 수집 즉시 OSV 와 매칭된 `legacy-api` 취약점 알림 (네트워크 필요) |
+| 차단 이력 | `attack-scenarios` : 시나리오 1~5 가 커밋·빌드 단계에서 차단된 근거 |
+| AI 보안 어시스턴트 | 서비스 맥락 `legacy-api` 선택 후 "가장 먼저 고쳐야 할 취약점은?" — 근거 문서 인용과 함께 답변 (`ANTHROPIC_API_KEY` 가 있으면 Claude 가 답변을 작성, 없으면 근거 문장 발췌) |
+
 ## 빠른 시작
 
 ```bash
@@ -79,7 +106,8 @@ jobs:
 
 ### 로컬 플랫폼 실행
 
-`docker compose up -d --build` (PostgreSQL+pgvector · 수집 API · 대시보드) — 절차는 [docker-compose.yml](docker-compose.yml) 상단 주석 참고.
+빠르게 확인하려면 `python scripts/demo.py` (SQLite, 위 [심사용 3분 재현](#심사용-3분-재현) 참고).
+운영형 구성은 `docker compose up -d --build` (PostgreSQL+pgvector · 수집 API · 대시보드) — 절차는 [docker-compose.yml](docker-compose.yml) 상단 주석 참고.
 Kubernetes 배포는 `kubectl apply -k deploy/k8s` ([deploy/k8s](deploy/k8s)).
 
 ## 검증 결과 (현재 저장소 기준, 재현 명령 포함)
