@@ -1,2 +1,5 @@
 # 학습된 모델 가중치 : 줄바꿈 변환 금지 (코드에 고정한 SHA-256 과 일치해야 함)
 *.keras binary
+
+# 실측 평가 스냅샷 : OS 와 관계없이 LF 고정 (Windows 체크아웃에서도 동일한 바이트)
+eval/pkg_real/** text eol=lf
