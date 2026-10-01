@@ -168,3 +168,25 @@ def test_anthropic_request_body(monkeypatch):
     assert sent["model"] == "claude-sonnet-5-5"
     assert "temperature" not in sent
     assert sent["max_tokens"] >= 16000  # 기본 사고(thinking) 토큰에 본문이 잘리지 않도록
+
+
+def test_knowledge_chunks_adds_sources_and_dedupes(tmp_path):
+    import json
+
+    from trustchain.assistant.ingest import builtin_knowledge, knowledge_chunks
+
+    base = builtin_knowledge()
+    dup = json.loads((ROOT / "src" / "trustchain" / "knowledge" / "osv" / "GHSA-j8r2-6x86-q33q.json").read_text(encoding="utf-8"))
+    (tmp_path / "GHSA-j8r2-6x86-q33q.json").write_text(json.dumps(dup), encoding="utf-8")   # 내장 샘플과 같은 권고문
+    new = {"id": "PYSEC-2099-1", "summary": "new advisory", "details": "d",
+           "affected": [{"package": {"ecosystem": "PyPI", "name": "x"}}]}
+    (tmp_path / "PYSEC-2099-1.json").write_text(json.dumps(new), encoding="utf-8")
+    cwe = tmp_path / "cwe.csv"
+    cwe.write_text("CWE-ID,Name,Description,Extended Description,Potential Mitigations\n89,SQL Injection,desc,,use binding\n",
+                   encoding="utf-8")
+    out = knowledge_chunks(osv_dir=tmp_path, cwe_csv=cwe)
+    ids = [c.chunk_id for c in out]
+    assert len(ids) == len(set(ids))
+    assert any(i.startswith("PYSEC-2099-1") or "PYSEC-2099-1" in i for i in ids)
+    assert any(i.startswith("cwe:89:") for i in ids)
+    assert len(out) > len(base)

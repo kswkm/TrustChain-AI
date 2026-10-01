@@ -157,3 +157,19 @@ def load_osv_dir(path: Path) -> Iterable[Chunk]:
             yield from chunk_osv(json.loads(p.read_text(encoding="utf-8")))
         except (ValueError, OSError):
             continue
+
+
+def knowledge_chunks(osv_dir: Path | None = None, cwe_csv: Path | None = None) -> list[Chunk]:
+    """내장 지식(KISA·CWE 요약·공급망·OSV 샘플) + OSV 덤프 + MITRE CWE CSV. 같은 청크 ID 는 처음 것만 남긴다."""
+    chunks = builtin_knowledge()
+    if osv_dir:
+        chunks += list(load_osv_dir(Path(osv_dir)))
+    if cwe_csv:
+        chunks += chunk_cwe_csv(Path(cwe_csv).read_text(encoding="utf-8", errors="replace"))
+    seen: set[str] = set()
+    out = []
+    for c in chunks:
+        if c.chunk_id not in seen:
+            seen.add(c.chunk_id)
+            out.append(c)
+    return out

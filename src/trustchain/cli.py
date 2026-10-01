@@ -344,7 +344,7 @@ def cmd_feed(args: argparse.Namespace) -> int:
     return 0
 
 
-def _assistant(offline_models: bool):
+def _assistant(offline_models: bool, osv_dir: str | None = None, cwe_csv: str | None = None):
     from trustchain.assistant.assistant import SecurityAssistant
     from trustchain.assistant.llm import default_llm
     from trustchain.assistant.retriever import HybridRetriever, LexicalReranker, default_reranker
@@ -360,27 +360,23 @@ def _assistant(offline_models: bool):
         retr = build_retriever(make_session_factory(engine), emb,
                                LexicalReranker() if offline_models else default_reranker())
     else:
-        from trustchain.assistant.ingest import builtin_knowledge
+        from trustchain.assistant.ingest import knowledge_chunks
 
         emb = HashingEmbedder() if offline_models else default_embedder()
-        retr = HybridRetriever(builtin_knowledge(), emb,
+        retr = HybridRetriever(knowledge_chunks(osv_dir, cwe_csv), emb,
                                reranker=LexicalReranker() if offline_models else default_reranker())
     return SecurityAssistant(retr, default_llm())
 
 
 def cmd_kb(args: argparse.Namespace) -> int:
-    from trustchain.assistant.ingest import builtin_knowledge, chunk_cwe_csv, load_osv_dir
+    from trustchain.assistant.ingest import knowledge_chunks
     from trustchain.assistant.store import upsert_chunks
     from trustchain.assistant.text import HashingEmbedder, default_embedder
     from trustchain.server.db import init_db, make_engine, make_session_factory
 
     engine = make_engine()
     init_db(engine)
-    chunks = builtin_knowledge()
-    if args.osv_dir:
-        chunks += list(load_osv_dir(Path(args.osv_dir)))
-    if args.cwe_csv:
-        chunks += chunk_cwe_csv(Path(args.cwe_csv).read_text(encoding="utf-8", errors="replace"))
+    chunks = knowledge_chunks(args.osv_dir, args.cwe_csv)
     emb = HashingEmbedder() if args.offline_models else default_embedder()
     with make_session_factory(engine)() as s:
         n = upsert_chunks(s, chunks, emb)
@@ -415,9 +411,9 @@ def cmd_ask(args: argparse.Namespace) -> int:
 def cmd_eval(args: argparse.Namespace) -> int:
     from trustchain.assistant.evaluate import answer_metrics, compare_modes, load_eval_set
 
-    assistant = _assistant(args.offline_models)
+    assistant = _assistant(args.offline_models, args.osv_dir, args.cwe_csv)
     items = load_eval_set(Path(args.evalset))
-    res = {"n": len(items), "retrieval": compare_modes(assistant.retriever, items, k=args.k)}
+    res = {"n": len(items), "kb_chunks": len(assistant.retriever.chunks), "retrieval": compare_modes(assistant.retriever, items, k=args.k)}
     if args.answers:
         res["answers"] = answer_metrics(assistant, items, k=args.k)
     print(json.dumps(res, ensure_ascii=False, indent=2))
@@ -617,6 +613,8 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("-k", type=int, default=5)
     sp.add_argument("--answers", action="store_true")
     sp.add_argument("--offline-models", action="store_true")
+    sp.add_argument("--osv-dir", help="지식베이스에 추가할 OSV 덤프 디렉터리 (실제 운영 규모 측정)")
+    sp.add_argument("--cwe-csv", help="지식베이스에 추가할 MITRE CWE CSV")
     sp.add_argument("-o", "--output")
     sp.set_defaults(func=cmd_eval)
 
