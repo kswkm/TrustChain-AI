@@ -145,3 +145,38 @@ def test_trust_score_components():
     bad = compute_trust_score(stale, [Vuln("X", severity=Severity.CRITICAL)], 2.0)
     assert bad.total < 40
     assert any("취약점" in n for n in bad.notes)
+
+
+def test_github_client_repo_activity():
+    from trustchain.packages.github import GitHubClient
+
+    class FakeHttp:
+        def __init__(self):
+            self.calls = []
+
+        def get_json(self, url, **kw):
+            self.calls.append((url, kw))
+            if url.endswith("/gone/repo"):
+                return {"__status__": 404}
+            return {"archived": True, "pushed_at": "2026-08-01T00:00:00Z", "stargazers_count": 3}
+
+    http = FakeHttp()
+    gh = GitHubClient(http, token="ghp_x")
+    info = gh.repo_activity("github.com/org/lib")
+    assert info.archived is True and info.pushed_at.year == 2026
+    assert http.calls[0][0] == "https://api.github.com/repos/org/lib"
+    assert http.calls[0][1]["headers"]["Authorization"] == "Bearer ghp_x"
+    assert gh.repo_activity("github.com/gone/repo") is None and gh.repo_activity(None) is None
+
+
+def test_trust_score_uses_github_activity():
+    from datetime import timedelta
+
+    from trustchain.packages.github import RepoActivity
+
+    stale = legit("a", last_release=NOW - timedelta(days=1500))
+    base = compute_trust_score(stale, [], 5.0, now=NOW)
+    active = compute_trust_score(stale, [], 5.0, repo=RepoActivity(False, NOW - timedelta(days=10)), now=NOW)
+    archived = compute_trust_score(stale, [], 5.0, repo=RepoActivity(True, NOW - timedelta(days=10)), now=NOW)
+    assert active.maintenance > base.maintenance                    # 저장소는 최근까지 활동 (배포만 오래됨)
+    assert archived.maintenance < base.maintenance and any("보관" in n for n in archived.notes)

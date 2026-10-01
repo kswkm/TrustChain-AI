@@ -12,6 +12,7 @@ from packaging.utils import canonicalize_name
 from trustchain.core.config import Config
 from trustchain.core.findings import Finding, Severity
 from trustchain.packages.classifier import KerasModel, LinearModel, Prediction, feature_vector, load_default_model, predict
+from trustchain.packages.github import GitHubClient
 from trustchain.packages.imports import IMPORT_MAP, candidate_distributions, collect_imports
 from trustchain.packages.osv import OSVClient, Vuln
 from trustchain.packages.pypi import MetaSource, PackageMeta
@@ -77,8 +78,10 @@ class PackageChecker:
         scorecard: ScorecardClient | None = None,
         model: LinearModel | KerasModel | None = None,
         now: datetime | None = None,
+        github: GitHubClient | None = None,
     ):
         self.cfg = cfg
+        self.github = github
         self.pypi = pypi
         self.osv = osv
         self.scorecard = scorecard
@@ -164,7 +167,8 @@ class PackageChecker:
         if self.osv is not None:
             v.vulns = self.osv.query(dep.name, dep.pinned_version) if dep.pinned_version else []
         sc = self.scorecard.score(meta.repository) if self.scorecard else None
-        v.trust = compute_trust_score(meta, v.vulns, sc)
+        repo = self.github.repo_activity(meta.repository) if self.github else None
+        v.trust = compute_trust_score(meta, v.vulns, sc, repo=repo, now=self.now)
         if self.cfg.gate.min_trust_score and v.trust.total < self.cfg.gate.min_trust_score:
             v.verdict = _raise(v.verdict, "주의")
             v.reasons.append(f"신뢰 점수 {v.trust.total}점 < 기준 {self.cfg.gate.min_trust_score}점")

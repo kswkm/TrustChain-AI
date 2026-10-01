@@ -12,6 +12,7 @@ from trustchain.core.findings import Finding, Report
 from trustchain.core.http import CachedClient
 from trustchain.iac.k8s import check_k8s, run_checkov
 from trustchain.packages.checker import PackageChecker, PackageVerdict
+from trustchain.packages.github import GitHubClient
 from trustchain.packages.osv import OSVClient
 from trustchain.packages.pypi import PyPIClient
 from trustchain.packages.scorecard import ScorecardClient
@@ -41,7 +42,8 @@ class GateOutcome:
 def make_checker(cfg: Config, with_scorecard: bool = True) -> PackageChecker:
     http = CachedClient(cfg.cache_dir, offline=cfg.offline)
     return PackageChecker(
-        cfg, PyPIClient(http), OSVClient(http), ScorecardClient(http) if with_scorecard else None
+        cfg, PyPIClient(http), OSVClient(http), ScorecardClient(http) if with_scorecard else None,
+        github=GitHubClient(http) if with_scorecard else None,
     )
 
 
