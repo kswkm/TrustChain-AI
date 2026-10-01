@@ -16,11 +16,12 @@ from trustchain.packages.realeval import (
     OSV_URL,
     SIMPLE_URL,
     TOP_URL,
+    auc,
     collect,
     evaluate_real,
     load_osv_malicious,
-    precision_at,
     sample_benign,
+    tpr_at_fpr,
 )
 
 
@@ -70,10 +71,25 @@ def test_load_osv_dedup_and_multi_affected():
     assert rows["a-pkg"]["typosquat"] is True and rows["a-pkg"]["osv_id"] == "MAL-2025-1"
 
 
-def test_precision_at():
-    assert precision_at(0.5, 0.0, 0.01) == 1.0
-    assert precision_at(0.0, 0.0, 0.01) == 0.0
-    assert precision_at(1.0, 0.01, 0.01) == pytest.approx(0.01 / (0.01 + 0.99 * 0.01))
+def test_auc_basic_and_ties():
+    assert auc([0.9, 0.8], [0.1, 0.2]) == 1.0
+    assert auc([0.1], [0.9]) == 0.0
+    assert auc([0.5, 0.5], [0.5]) == 0.5
+    assert auc([0.9, 0.5], [0.5, 0.1]) == pytest.approx((1 + 1 + 0.5 + 1) / 4)
+
+
+def test_tpr_at_fpr_respects_tied_block():
+    # 정상 10개 중 9개가 0.65 로 동점 : 기준점을 동점 묶음 안에 둘 수 없으므로 0.65 보다 위에서만 자를 수 있다
+    neg = [0.65] * 9 + [0.9]
+    pos = [0.95, 0.9, 0.65, 0.65]
+    tpr, fpr = tpr_at_fpr(pos, neg, 0.10)
+    assert fpr <= 0.10 and (tpr, fpr) == (0.5, 0.1)          # 기준 0.9 : 정상 1/10, 악성 2/4
+    tpr, fpr = tpr_at_fpr(pos, neg, 0.05)
+    assert fpr == 0.0 and tpr == 0.25                          # 기준 0.9 초과 : 악성 0.95 만
+
+
+def test_tpr_at_fpr_zero_when_unreachable():
+    assert tpr_at_fpr([0.5], [0.9, 0.9], 0.01) == (0.0, 0.0)
 
 
 def _client(**metas):
@@ -168,12 +184,13 @@ def test_collect_writes_utf8_lf(tmp_path):
 def test_evaluate_real_report(tmp_path):
     rep = evaluate_real(LinearModel.load_default(), make_snapshot(tmp_path))
     assert rep["model"] == "경량 선형 모델"
-    assert rep["malicious"]["typosquat"]["n"] == 1 and rep["malicious"]["all"]["n"] == 2
-    for grp in (rep["malicious"]["typosquat"], rep["malicious"]["all"]):
-        assert 0.0 <= grp["detection_rate"] <= 1.0 and grp["block_rate"] <= grp["detection_rate"]
+    ns = rep["name_signal"]
+    assert ns["typosquat"]["n_pos"] == 1 and ns["all"]["n_pos"] == 2 and ns["all"]["n_neg"] == 4
+    for grp in ns.values():
+        assert 0.0 <= grp["auc"] <= 1.0
+        assert grp["fpr_1pct"] <= 0.01 and grp["fpr_5pct"] <= 0.05
+    assert "malicious" not in rep and "precision_at_prevalence" not in rep
     assert rep["benign"]["rank"]["n"] == 2 and rep["benign"]["random"]["n"] == 2 and rep["benign"]["all"]["n"] == 4
-    for k in ("1%", "0.1%", "0.01%"):
-        assert 0.0 <= rep["precision_at_prevalence"][k] <= 1.0
     assert rep["conditions"]["collected_at"] == NOW.isoformat()
 
 
@@ -197,4 +214,4 @@ def test_cli_eval_real_missing_snapshot(tmp_path, capsys):
 def test_cli_eval_real_prints_json(tmp_path, capsys):
     snap = make_snapshot(tmp_path)
     assert main(["model", "eval-real", "--data-dir", str(snap)]) == 0
-    assert json.loads(capsys.readouterr().out)["malicious"]["all"]["n"] == 2
+    assert json.loads(capsys.readouterr().out)["name_signal"]["all"]["n_pos"] == 2

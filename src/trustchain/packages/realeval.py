@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import bisect
 import hashlib
 import io
 import json
@@ -29,7 +30,6 @@ TOP_URL = "https://hugovk.github.io/top-pypi-packages/top-pypi-packages-30-days.
 SIMPLE_URL = "https://pypi.org/simple/"
 SIMPLE_ACCEPT = "application/vnd.pypi.simple.v1+json"
 MAX_DOWNLOAD = 200 * 1024 * 1024
-PREVALENCES = {"1%": 0.01, "0.1%": 0.001, "0.01%": 0.0001}
 
 
 def load_osv_malicious(zip_bytes: bytes) -> list[dict[str, Any]]:
@@ -95,10 +95,33 @@ def sample_benign(candidates: dict[str, list[tuple[str, int | None]]], targets: 
     return rows, excluded
 
 
-def precision_at(tpr: float, fpr: float, prevalence: float) -> float:
-    tp = prevalence * tpr
-    denom = tp + (1 - prevalence) * fpr
-    return tp / denom if denom else 0.0
+def auc(pos: list[float], neg: list[float]) -> float:
+    """악성 점수가 정상 점수보다 높을 확률 (동점은 0.5, Mann-Whitney U / (n·m))."""
+    if not pos or not neg:
+        return 0.0
+    ns = sorted(neg)
+    wins = 0.0
+    for x in pos:
+        lo, hi = bisect.bisect_left(ns, x), bisect.bisect_right(ns, x)
+        wins += lo + 0.5 * (hi - lo)
+    return wins / (len(pos) * len(ns))
+
+
+def tpr_at_fpr(pos: list[float], neg: list[float], target: float) -> tuple[float, float]:
+    """정상 오탐률이 target 이하인 가장 낮은 기준점(점수 >= 기준이면 위험)에서의 (탐지율, 달성 오탐률).
+
+    기준점은 정상 점수 값에서만 고르므로 동점 묶음은 통째로 기준 위 또는 아래에 놓인다.
+    """
+    if not pos or not neg:
+        return 0.0, 0.0
+    top = max(neg)
+    best = (sum(1 for x in pos if x > top) / len(pos), 0.0)  # 모든 정상 점수보다 위
+    for t in sorted(set(neg), reverse=True):
+        fpr = sum(1 for x in neg if x >= t) / len(neg)
+        if fpr > target:
+            break
+        best = (sum(1 for x in pos if x >= t) / len(pos), fpr)
+    return best
 
 
 def _utcnow() -> datetime:
@@ -161,13 +184,19 @@ def collect(out_dir: Path, client: MetaSource, fetch: Callable[[str, dict[str, s
     return manifest
 
 
-def _rates(classes: list[int], positive: str) -> dict[str, Any]:
+def _fp_rates(classes: list[int]) -> dict[str, Any]:
     n = len(classes)
     hit = sum(1 for c in classes if c > 0) / n if n else 0.0
     block = sum(1 for c in classes if c == 2) / n if n else 0.0
-    if positive == "malicious":
-        return {"n": n, "detection_rate": round(hit, 4), "block_rate": round(block, 4)}
     return {"n": n, "false_positive_rate": round(hit, 4), "block_fp_rate": round(block, 4)}
+
+
+def _name_signal(pos: list[float], neg: list[float]) -> dict[str, Any]:
+    t1, f1 = tpr_at_fpr(pos, neg, 0.01)
+    t5, f5 = tpr_at_fpr(pos, neg, 0.05)
+    return {"n_pos": len(pos), "n_neg": len(neg), "auc": round(auc(pos, neg), 4),
+            "tpr_at_fpr_1pct": round(t1, 4), "fpr_1pct": round(f1, 4),
+            "tpr_at_fpr_5pct": round(t5, 4), "fpr_5pct": round(f5, 4)}
 
 
 def evaluate_real(model: Any, snapshot_dir: Path) -> dict[str, Any]:
@@ -178,24 +207,26 @@ def evaluate_real(model: Any, snapshot_dir: Path) -> dict[str, Any]:
     now = datetime.fromisoformat(manifest["collected_at"])
     pop = popular_packages()
 
-    def cls(name: str, meta: PackageMeta | None) -> int:
-        pr = model.predict_proba(feature_vector(name_features(name, popular=pop), meta, now))
+    def proba(name: str, meta: PackageMeta | None) -> list[float]:
+        return model.predict_proba(feature_vector(name_features(name, popular=pop), meta, now))
+
+    def cls(pr: list[float]) -> int:
         return max(range(len(pr)), key=lambda i: pr[i])
 
     mal = _read_jsonl(snapshot_dir / "malicious.jsonl")
     ben = _read_jsonl(snapshot_dir / "benign.jsonl")
-    mal_c = [(r, cls(r["name"], None)) for r in mal]
-    ben_c = [(r, cls(r["name"], PackageMeta.from_dict(r["meta"]))) for r in ben]
-    m_typo = _rates([c for r, c in mal_c if r["typosquat"]], "malicious")
-    b_all = _rates([c for _, c in ben_c], "benign")
+    # 이름 신호 : 악성·정상 모두 메타데이터 없이 (같은 조건) 위험 확률 = 1 - P(정상)
+    mal_s = [(r, 1.0 - proba(r["name"], None)[0]) for r in mal]
+    ben_s = [1.0 - proba(r["name"], None)[0] for r in ben]
+    # 실사용 오탐 : 정상 패키지를 실제 메타데이터로 판정
+    ben_c = [(r, cls(proba(r["name"], PackageMeta.from_dict(r["meta"])))) for r in ben]
     return {
         "model": getattr(model, "backend", ""),
-        "malicious": {"typosquat": m_typo, "all": _rates([c for _, c in mal_c], "malicious")},
-        "benign": {s: _rates([c for r, c in ben_c if r["source"] == s], "benign") for s in ("rank", "random")}
-        | {"all": b_all},
-        "precision_at_prevalence": {k: round(precision_at(m_typo["detection_rate"], b_all["false_positive_rate"], p), 4)
-                                    for k, p in PREVALENCES.items()},
-        "conditions": {"malicious_metadata": "미사용 (삭제된 패키지, 이름 특징만)",
+        "name_signal": {"typosquat": _name_signal([s for r, s in mal_s if r["typosquat"]], ben_s),
+                        "all": _name_signal([s for _, s in mal_s], ben_s)},
+        "benign": {s: _fp_rates([c for r, c in ben_c if r["source"] == s]) for s in ("rank", "random")}
+        | {"all": _fp_rates([c for _, c in ben_c])},
+        "conditions": {"name_signal": "악성·정상 모두 메타데이터 없이 위험 확률(1-P(정상)) 비교 (악성은 삭제되어 메타데이터 없음)",
                        "benign_metadata": "수집 시점 PyPI 실제 메타데이터",
                        "collected_at": manifest["collected_at"], "osv_sha256": manifest["osv"]["sha256"]},
     }
