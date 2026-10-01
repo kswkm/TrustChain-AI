@@ -27,5 +27,5 @@
 - 중복 : pip-audit·osv-scanner 결과와 자체 OSV 조회(F2·F4)가 같은 취약점을 내면 (패키지, 버전, 취약점 ID) 기준으로 하나만 남긴다.
 - GitHub REST API 는 토큰 없이도 동작(비인증 한도 60회/시간), `GITHUB_TOKEN` 이 있으면 사용. 실패 시 점수에서 해당 항목만 제외.
 - 업로드 : `.json` 만, 기본 10MB, 파일명은 `os.path.basename` + 허용 문자 정규화 후 저장하지 않고 메모리에서 CycloneDX 검증 → 기존 SBOM 수집 경로.
-- lock : `python:3.11-slim`(Ubuntu 와 같은 리눅스) 컨테이너에서 `pip-compile --generate-hashes` 로 생성.
+- lock : `python:3.11-slim`(Debian 기반 리눅스) 컨테이너에서 `pip-compile --generate-hashes` 로 생성.
 - 측정 수치는 낮게 나와도 그대로 보고한다.

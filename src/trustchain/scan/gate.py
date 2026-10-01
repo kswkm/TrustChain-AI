@@ -69,6 +69,7 @@ def run_gate(
     checker: PackageChecker | None = None,
     stages: set[str] | None = None,
     external_tools: bool = True,
+    dependency_scanners: bool = False,
 ) -> GateOutcome:
     root = cfg.root
     targets = targets or [root]
@@ -82,9 +83,11 @@ def run_gate(
         checker = checker or make_checker(cfg)
         verdicts, pf = checker.check_project(root)
         report.extend(pf)
-        if external_tools:
-            # pip-audit · OSV-Scanner : 자체 OSV 조회와 같은 취약점(별칭 포함)은 한 건만 남긴다
-            report.extend(deps.merge_dependency_findings(report.findings, deps.run_osv_scanner(root) + deps.run_pip_audit(root)))
+        if dependency_scanners:
+            # OSV-Scanner · pip-audit (빌드 게이트에서만, 커밋 전 점검은 가볍게) : 자체 OSV 조회와 같은 취약점(별칭 포함)은 한 건만
+            found, status = deps.run_dependency_scanners(root, offline=cfg.offline)
+            report.extend(deps.merge_dependency_findings(report.findings, found))
+            report.meta["dependency_scanners"] = status
     if "models" in stages:
         _, mf = scan_models(root, cfg.exclude, root)
         report.extend(mf)

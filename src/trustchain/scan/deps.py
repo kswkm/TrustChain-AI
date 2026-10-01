@@ -1,6 +1,8 @@
 """F5. 의존성 취약점 스캔 : pip-audit · OSV-Scanner 연동 (설치되어 있으면 실행).
 
-자체 OSV 조회(F2·F4)와 같은 취약점은 (패키지, 취약점 ID·별칭 중 하나라도 일치) 기준으로 한 건만 남긴다.
+- 대상은 프로젝트 루트의 requirements 파일뿐이다 (저장소 전체를 훑지 않아 테스트 픽스처·체크아웃한 다른 저장소를 건드리지 않음).
+- 자체 OSV 조회(F2·F4)와 같은 취약점은 (패키지, 취약점 ID·별칭 중 하나라도 일치) 기준으로 한 건만 남긴다.
+- 도구별 실행 결과(ok / missing / failed / offline / no-requirements)를 게이트 리포트에 남긴다.
 """
 
 from __future__ import annotations
@@ -17,22 +19,29 @@ from trustchain.core.findings import Finding, Severity
 from trustchain.packages.osv import severity_from_score
 from trustchain.secure_coding.runner import _run_tool
 
-__all__ = ["merge_dependency_findings", "parse_osv_scanner", "parse_pip_audit", "run_osv_scanner", "run_pip_audit",
-           "shutil"]
+__all__ = ["merge_dependency_findings", "parse_osv_scanner", "parse_pip_audit", "run_dependency_scanners",
+           "run_osv_scanner", "run_pip_audit"]
 
 
 def _fix_text(pkg: str, fixed: list[str]) -> str:
     return f"{pkg} → {fixed[0]} 이상으로 업그레이드" if fixed else "패치 버전이 없습니다. 대체 패키지나 완화 조치를 검토하세요."
 
 
-def parse_pip_audit(data: dict[str, Any], source: str) -> list[Finding]:
+def parse_pip_audit(data: Any, source: str) -> list[Finding]:
+    """pip-audit 2.x JSON ({"dependencies": [...]}). 예상과 다른 형식은 무시한다."""
+    if not isinstance(data, dict):
+        return []
     out = []
     for dep in data.get("dependencies") or []:
+        if not isinstance(dep, dict) or not dep.get("name"):
+            continue
         for v in dep.get("vulns") or []:
+            if not isinstance(v, dict) or not v.get("id"):
+                continue
             fixed = list(v.get("fix_versions") or [])
             out.append(Finding(
                 rule_id=v["id"], title=f"취약한 의존성 {dep['name']}=={dep.get('version')}",
-                # pip-audit 는 심각도를 주지 않는다 : 자체 OSV 조회에 같은 취약점이 있으면 그쪽(심각도 포함)이 남는다
+                # pip-audit 는 심각도를 주지 않는다 : 자체 OSV 조회·OSV-Scanner 에 같은 취약점이 있으면 그쪽(심각도 포함)이 남는다
                 severity=Severity.MEDIUM, category="dependency", file=source,
                 message=f"{v['id']} {(v.get('description') or '').strip()[:300]} (pip-audit, 심각도 정보 없음)".strip(),
                 fix=_fix_text(dep["name"], fixed), tool="pip-audit",
@@ -50,15 +59,24 @@ def _fixed_versions(vuln: dict[str, Any]) -> list[str]:
     return out
 
 
-def parse_osv_scanner(data: dict[str, Any], root: Path) -> list[Finding]:
+def parse_osv_scanner(data: Any, root: Path) -> list[Finding]:
+    """osv-scanner v2 JSON. 그룹(같은 취약점의 별칭 묶음)마다 한 건. 예상과 다른 형식은 무시한다."""
+    if not isinstance(data, dict):
+        return []
     out = []
     for res in data.get("results") or []:
+        if not isinstance(res, dict):
+            continue
         source = rel(Path((res.get("source") or {}).get("path", "")), root)
         for p in res.get("packages") or []:
-            pkg = p.get("package") or {}
-            vulns = {v["id"]: v for v in p.get("vulnerabilities") or []}
+            pkg = (p or {}).get("package") or {}
+            if not pkg.get("name"):
+                continue
+            vulns = {v["id"]: v for v in p.get("vulnerabilities") or [] if isinstance(v, dict) and v.get("id")}
             for g in p.get("groups") or []:
-                ids = list(g.get("ids") or [])
+                ids = list((g or {}).get("ids") or [])
+                if not ids:
+                    continue
                 group_vulns = [vulns[i] for i in ids if i in vulns]
                 summary = next((v.get("summary") for v in group_vulns if v.get("summary")), "") or next(
                     (v.get("details", "")[:300] for v in group_vulns if v.get("details")), "")
@@ -68,11 +86,11 @@ def parse_osv_scanner(data: dict[str, Any], root: Path) -> list[Finding]:
                 except ValueError:
                     score = None
                 out.append(Finding(
-                    rule_id=ids[0] if ids else "OSV-UNKNOWN", title=f"취약한 의존성 {pkg.get('name')}=={pkg.get('version')}",
+                    rule_id=ids[0], title=f"취약한 의존성 {pkg['name']}=={pkg.get('version')}",
                     severity=severity_from_score(score), category="dependency", file=source,
-                    message=f"{', '.join(ids)} {summary}".strip(), fix=_fix_text(pkg.get("name", ""), fixed),
+                    message=f"{', '.join(ids)} {summary}".strip(), fix=_fix_text(pkg["name"], fixed),
                     tool="osv-scanner",
-                    extra={"package": pkg.get("name"), "version": pkg.get("version"), "fixed": fixed, "cvss": score,
+                    extra={"package": pkg["name"], "version": pkg.get("version"), "fixed": fixed, "cvss": score,
                            "aliases": sorted({*ids, *(g.get("aliases") or [])})},
                 ))
     return out
@@ -83,7 +101,10 @@ def _ids(f: Finding) -> set[str]:
 
 
 def merge_dependency_findings(existing: list[Finding], new: list[Finding]) -> list[Finding]:
-    """existing 과 (패키지, ID·별칭) 이 겹치지 않는 new 만 돌려준다. new 안의 중복도 한 건만 남긴다."""
+    """existing 과 (패키지, ID·별칭) 이 겹치지 않는 new 만 돌려준다. new 안의 중복도 한 건만 남긴다.
+
+    도구마다 버전 표기가 다를 수 있어(5.3 / 5.3.0) 버전은 비교하지 않는다.
+    """
     seen: dict[str, set[str]] = {}
     for f in existing:
         if f.category == "dependency" and f.extra.get("package"):
@@ -103,28 +124,50 @@ def _requirement_files(root: Path) -> list[Path]:
     return sorted(root.glob("requirements*.txt")) + sorted(root.glob("requirements/*.txt"))
 
 
-def run_pip_audit(root: Path) -> list[Finding]:
-    """고정 버전(==) requirements 를 설치 없이 감사한다 (--no-deps --disable-pip). 도구가 없거나 실패하면 빈 결과."""
-    if not shutil.which("pip-audit"):
-        return []
-    out = []
-    for req in _requirement_files(root):
-        stdout = _run_tool(["pip-audit", "-r", str(req), "--no-deps", "--disable-pip", "-f", "json",
-                            "--progress-spinner", "off"])
-        try:
-            data = json.loads(stdout or "")
-        except ValueError:
-            continue  # 버전 미고정 등으로 감사할 수 없는 파일
-        out += parse_pip_audit(data, rel(req, root))
-    return out
-
-
-def run_osv_scanner(root: Path) -> list[Finding]:
-    if not shutil.which("osv-scanner"):
-        return []
-    stdout = _run_tool(["osv-scanner", "scan", "source", "--format", "json", "-r", str(root)], timeout=600)
+def _load_json(stdout: str | None) -> Any:
     try:
-        data = json.loads(stdout or "")
+        return json.loads(stdout or "")
     except ValueError:
-        return []
-    return parse_osv_scanner(data, root)
+        return None
+
+
+def run_pip_audit(root: Path) -> tuple[list[Finding], str]:
+    """고정 버전(==) requirements 를 설치 없이 감사한다 (--no-deps --disable-pip)."""
+    reqs = _requirement_files(root)
+    if not reqs:
+        return [], "no-requirements"
+    if not shutil.which("pip-audit"):
+        return [], "missing"
+    out, ok = [], False
+    for req in reqs:
+        data = _load_json(_run_tool(["pip-audit", "-r", str(req), "--no-deps", "--disable-pip", "-f", "json",
+                                     "--progress-spinner", "off"]))
+        if isinstance(data, dict):
+            ok = True
+            out += parse_pip_audit(data, rel(req, root))
+        # 그 밖(버전 미고정 등으로 감사할 수 없는 파일)은 건너뛴다
+    return out, "ok" if ok else "failed"
+
+
+def run_osv_scanner(root: Path) -> tuple[list[Finding], str]:
+    reqs = _requirement_files(root)
+    if not reqs:
+        return [], "no-requirements"
+    if not shutil.which("osv-scanner"):
+        return [], "missing"
+    cmd = ["osv-scanner", "scan", "source", "--format", "json"]
+    for req in reqs:
+        cmd += ["-L", str(req)]
+    data = _load_json(_run_tool(cmd, timeout=600))
+    if not isinstance(data, dict):
+        return [], "failed"
+    return parse_osv_scanner(data, root), "ok"
+
+
+def run_dependency_scanners(root: Path, offline: bool = False) -> tuple[list[Finding], dict[str, str]]:
+    """OSV-Scanner → pip-audit 순서(심각도 정보가 있는 쪽 우선). 오프라인이면 네트워크가 필요한 두 도구를 실행하지 않는다."""
+    if offline:
+        return [], {"osv-scanner": "offline", "pip-audit": "offline"}
+    osv, s1 = run_osv_scanner(root)
+    pa, s2 = run_pip_audit(root)
+    return osv + pa, {"osv-scanner": s1, "pip-audit": s2}

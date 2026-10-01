@@ -22,6 +22,7 @@ from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
+from starlette.concurrency import run_in_threadpool
 
 from trustchain import __version__
 from trustchain.core.logging import get_logger
@@ -172,19 +173,19 @@ def create_app(database_url: str | None = None, monitor=None, assistant_factory=
     async def upload_sbom(s: DB, _: Ingest, file: UploadFile, service: Annotated[str, Form()],
                           digest: Annotated[str | None, Form()] = None,
                           image: Annotated[str | None, Form()] = None) -> dict[str, Any]:
-        # 파일명은 응답 표시용으로만 정규화해 쓰고, 파일은 디스크에 저장하지 않는다
+        # 파일명은 응답 표시용으로만 정규화해 쓰고 서버 경로에 저장하지 않는다 (1MB 초과분은 요청 동안만 임시 파일)
         name = safe_filename(file.filename)
         check_suffix(name)
         raw = await read_limited(file)
         try:
             sbom = json.loads(raw.decode("utf-8"))
-        except (UnicodeDecodeError, ValueError):
+        except (UnicodeDecodeError, ValueError, RecursionError):
             raise HTTPException(422, "JSON 형식이 아닙니다") from None
         try:
             body = SBOMIn(service=service, digest=digest, image=image, sbom=sbom)
         except ValidationError as e:
             raise HTTPException(422, [{"loc": x.get("loc"), "msg": x.get("msg")} for x in e.errors()[:20]]) from None
-        out = post_sbom(body, s, _)
+        out = await run_in_threadpool(post_sbom, body, s, _)
         return out | {"filename": name}
 
     @app.post("/api/v1/events", status_code=201)

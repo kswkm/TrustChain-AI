@@ -163,7 +163,9 @@ def cmd_gate(args: argparse.Namespace) -> int:
     stages = set(args.stages.split(",")) if args.stages else None
     outcome = run_gate(cfg, stages=stages, image=args.image,
                        trivy_report=Path(args.trivy_report) if args.trivy_report else None,
-                       external_tools=not args.no_external)
+                       external_tools=not args.no_external,
+                       # 빌드 게이트에서만 pip-audit · OSV-Scanner 실행 (커밋 전 `check` 는 가볍게 유지)
+                       dependency_scanners=not args.no_external)
     if args.format == "text":
         print_report(outcome.report, outcome.violations, outcome.verdicts)
     _emit(args, outcome.to_dict(), outcome.report)

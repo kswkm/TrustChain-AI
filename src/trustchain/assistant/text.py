@@ -72,7 +72,10 @@ def tokenize(text: str) -> list[str]:
 
 
 class BM25:
-    """Okapi BM25 (k1=1.5, b=0.75). rank_bm25(BM25Okapi) 를 쓰고, 설치되지 않은 가벼운 환경에서만 같은 식의 자체 구현으로 대체한다."""
+    """Okapi BM25 (k1=1.5, b=0.75). rank_bm25(BM25Okapi) 를 쓰고, 설치되지 않은 가벼운 환경에서만 자체 구현으로 대체한다.
+
+    자체 구현은 idf = log(1 + (N-n+0.5)/(n+0.5)) 로 BM25Okapi(음수 idf 를 epsilon 하한으로 대체)와 점수가 조금 다르다.
+    """
 
     def __init__(self, corpus_tokens: Sequence[Sequence[str]], k1: float = 1.5, b: float = 0.75):
         self.k1, self.b = k1, b

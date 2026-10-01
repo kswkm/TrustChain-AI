@@ -16,7 +16,7 @@
 | | **F2** 환각 패키지 탐지 (PyPI 존재·등록 시점, import ↔ 의존성 불일치) | [packages/checker.py](src/trustchain/packages/checker.py) |
 | | **F3** 타이포스쿼팅 탐지 (편집거리·키보드 인접·형태 유사 문자·n-gram 임베딩 + 분류 모델) | [packages/typosquat.py](src/trustchain/packages/typosquat.py), [classifier.py](src/trustchain/packages/classifier.py) |
 | | **F4** 의존성 신뢰 점수 0~100 (OSV·유지관리(PyPI 배포 + GitHub REST API 저장소 활동)·관리자 수·OpenSSF Scorecard) | [packages/trust_score.py](src/trustchain/packages/trust_score.py) |
-| ② 빌드 | **F5** 보안 스캔 게이트 (코드·의존성(자체 OSV 조회 + pip-audit·OSV-Scanner)·악성 pickle 모델·이미지(Trivy, 지원 종료 OS 차단)·IaC) | [scan/](src/trustchain/scan) |
+| ② 빌드 | **F5** 보안 스캔 게이트 (코드·의존성(자체 OSV 조회 + 빌드 게이트에서 pip-audit·OSV-Scanner)·악성 pickle 모델·이미지(Trivy, 지원 종료 OS 차단)·IaC) | [scan/](src/trustchain/scan) |
 | | **F6** SBOM(CycloneDX 1.6, Syft) + AI-BOM(모델·가중치 해시·데이터셋 출처) | [bom/](src/trustchain/bom) |
 | | **F7** SLSA Build L3 출처 증명 · cosign keyless 서명 | [.github/workflows/trustchain-ci.yml](.github/workflows/trustchain-ci.yml) |
 | ③ 배포 | **F8** Verify Gate (서명·인증서 클레임·SLSA·SBOM/AI-BOM 증명) | [attest/verify.py](src/trustchain/attest/verify.py), [trustchain-cd.yml](.github/workflows/trustchain-cd.yml) |
@@ -135,7 +135,7 @@ Kubernetes 배포는 `kubectl apply -k deploy/k8s` ([deploy/k8s](deploy/k8s)).
 
 | 유형 | 적용 |
 |---|---|
-| 입력데이터 검증 | 모든 API 요청은 pydantic 스키마로 검증(`extra="forbid"`, 길이·패턴·범위 제한), 요청 본문 크기 제한, 검증 오류 응답에 입력값을 되돌려주지 않음. SBOM 파일 업로드(`/api/v1/sboms/upload`)는 `.json` 만·기본 10MB 제한, 파일명은 경로 구분자 제거·허용 문자 정규화, 디스크에 저장하지 않고 CycloneDX 검증 |
+| 입력데이터 검증 | 모든 API 요청은 pydantic 스키마로 검증(`extra="forbid"`, 길이·패턴·범위 제한), 요청 본문 크기 제한, 검증 오류 응답에 입력값을 되돌려주지 않음. SBOM 파일 업로드(`/api/v1/sboms/upload`)는 `.json` 만·기본 10MB 제한, 파일명은 경로 구분자 제거·허용 문자 정규화, 서버 경로에 저장하지 않고(1MB 초과분은 요청 동안만 임시 파일) CycloneDX 검증 |
 | SQL 삽입 | SQLAlchemy ORM·바인딩 파라미터만 사용 (pgvector 질의 벡터도 바인딩) |
 | 인증·권한 | API 토큰은 SHA-256 해시로만 저장, reader/ingest/admin 역할별 최소 권한, Actions 잡마다 `permissions` 명시 |
 | 중요정보 노출 | 비밀정보는 Secret/OIDC 로만 주입, 로그 마스킹 필터, 500 오류에는 요청 ID 만 반환 |

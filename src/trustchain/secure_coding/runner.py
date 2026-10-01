@@ -46,7 +46,8 @@ def _run_tool(cmd: list[str], timeout: int = 300) -> str | None:
     if not exe:
         return None
     try:
-        r = subprocess.run([exe, *cmd[1:]], capture_output=True, text=True, timeout=timeout, check=False)  # nosec
+        r = subprocess.run([exe, *cmd[1:]], capture_output=True, text=True, encoding="utf-8", errors="replace",
+                           timeout=timeout, check=False)  # nosec
     except (OSError, subprocess.TimeoutExpired):
         return None
     return r.stdout

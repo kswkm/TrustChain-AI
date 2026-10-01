@@ -71,10 +71,11 @@ def test_merge_drops_alias_duplicates_keeps_new(tmp_path):
     assert [f.rule_id for f in merged] == ["PYSEC-2018-28"]
 
 
-def test_runners_skip_when_tool_missing(tmp_path, monkeypatch):
+def test_runners_report_missing_tool(tmp_path, monkeypatch):
     (tmp_path / "requirements.txt").write_text("requests==2.19.0\n", encoding="utf-8")
     monkeypatch.setattr(deps.shutil, "which", lambda name: None)
-    assert deps.run_pip_audit(tmp_path) == [] and deps.run_osv_scanner(tmp_path) == []
+    assert deps.run_pip_audit(tmp_path) == ([], "missing")
+    assert deps.run_osv_scanner(tmp_path) == ([], "missing")
 
 
 def test_run_pip_audit_parses_tool_output(tmp_path, monkeypatch):
@@ -89,26 +90,70 @@ def test_run_pip_audit_parses_tool_output(tmp_path, monkeypatch):
 
     monkeypatch.setattr(deps.shutil, "which", lambda name: f"/usr/bin/{name}")
     monkeypatch.setattr(deps, "_run_tool", fake_run)
-    out = deps.run_pip_audit(tmp_path)
-    assert [f.rule_id for f in out] == ["PYSEC-2018-28"]
+    out, status = deps.run_pip_audit(tmp_path)
+    assert [f.rule_id for f in out] == ["PYSEC-2018-28"] and status == "ok"
     assert calls[0][0] == "pip-audit" and "--no-deps" in calls[0] and "--disable-pip" in calls[0]
 
 
-def test_run_pip_audit_ignores_non_json(tmp_path, monkeypatch):
+def test_run_pip_audit_failed_output(tmp_path, monkeypatch):
     (tmp_path / "requirements.txt").write_text("requests>=2\n", encoding="utf-8")   # 버전 미고정 → 도구 오류 출력
     monkeypatch.setattr(deps.shutil, "which", lambda name: f"/usr/bin/{name}")
     monkeypatch.setattr(deps, "_run_tool", lambda cmd, timeout=300: "ERROR: not pinned")
-    assert deps.run_pip_audit(tmp_path) == []
+    assert deps.run_pip_audit(tmp_path) == ([], "failed")
 
 
-def test_gate_includes_external_dependency_scanners(cfg, fake_pypi, monkeypatch):
+def test_run_osv_scanner_scans_only_requirement_files(tmp_path, monkeypatch):
+    import json
+
+    (tmp_path / "requirements.txt").write_text("pyyaml==5.3\n", encoding="utf-8")
+    (tmp_path / ".trustchain-src").mkdir()
+    (tmp_path / ".trustchain-src" / "requirements.txt").write_text("pyyaml==5.3\n", encoding="utf-8")
+    calls = []
+
+    def fake_run(cmd, timeout=300):
+        calls.append(cmd)
+        return json.dumps(osv_scanner_output(tmp_path))
+
+    monkeypatch.setattr(deps.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(deps, "_run_tool", fake_run)
+    out, status = deps.run_osv_scanner(tmp_path)
+    assert status == "ok" and len(out) == 1
+    cmd = calls[0]
+    assert "-r" not in cmd and cmd.count("-L") == 1 and cmd[cmd.index("-L") + 1].endswith("requirements.txt")
+    assert ".trustchain-src" not in " ".join(cmd)
+
+
+def test_no_requirement_files_means_nothing_to_scan(tmp_path, monkeypatch):
+    monkeypatch.setattr(deps.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(deps, "_run_tool", lambda *a, **k: (_ for _ in ()).throw(AssertionError("called")))
+    assert deps.run_osv_scanner(tmp_path) == ([], "no-requirements")
+    assert deps.run_pip_audit(tmp_path) == ([], "no-requirements")
+
+
+def test_parsers_tolerate_unexpected_shapes(tmp_path):
+    assert parse_pip_audit([{"name": "x"}], "r.txt") == []                     # pip-audit 1.x 목록 형식
+    assert parse_pip_audit({"dependencies": [{"version": "1"}]}, "r.txt") == []  # 이름 없음
+    assert parse_osv_scanner({"results": [{"packages": [{"groups": [{}]}]}]}, tmp_path) == []
+    assert parse_osv_scanner(["x"], tmp_path) == []
+
+
+def test_dependency_scanners_offline_and_status(tmp_path, monkeypatch):
+    (tmp_path / "requirements.txt").write_text("requests==2.19.0\n", encoding="utf-8")
+    monkeypatch.setattr(deps, "_run_tool", lambda *a, **k: (_ for _ in ()).throw(AssertionError("network")))
+    out, status = deps.run_dependency_scanners(tmp_path, offline=True)
+    assert out == [] and status == {"osv-scanner": "offline", "pip-audit": "offline"}
+
+
+def test_gate_runs_dependency_scanners_only_when_requested(cfg, fake_pypi, monkeypatch):
     from trustchain.packages.checker import PackageChecker
     from trustchain.scan.gate import run_gate
 
     (cfg.root / "requirements.txt").write_text("requests==2.31.0\n", encoding="utf-8")
-    monkeypatch.setattr(deps, "run_pip_audit", lambda root: parse_pip_audit(PIP_AUDIT, "requirements.txt"))
-    monkeypatch.setattr(deps, "run_osv_scanner", lambda root: [])
-    out = run_gate(cfg, stages={"packages"}, checker=PackageChecker(cfg, fake_pypi), external_tools=True)
+    monkeypatch.setattr(deps, "run_dependency_scanners", lambda root, offline=False: (
+        parse_pip_audit(PIP_AUDIT, "requirements.txt"), {"osv-scanner": "missing", "pip-audit": "ok"}))
+    out = run_gate(cfg, stages={"packages"}, checker=PackageChecker(cfg, fake_pypi), dependency_scanners=True)
     assert "PYSEC-2018-28" in {f.rule_id for f in out.report.findings}
-    out = run_gate(cfg, stages={"packages"}, checker=PackageChecker(cfg, fake_pypi), external_tools=False)
+    assert out.report.meta["dependency_scanners"] == {"osv-scanner": "missing", "pip-audit": "ok"}
+    out = run_gate(cfg, stages={"packages"}, checker=PackageChecker(cfg, fake_pypi))       # 기본값 : 커밋 전 점검에선 실행 안 함
     assert "PYSEC-2018-28" not in {f.rule_id for f in out.report.findings}
+    assert "dependency_scanners" not in out.report.meta
