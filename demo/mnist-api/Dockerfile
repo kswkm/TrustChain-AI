@@ -1,11 +1,9 @@
 # 시연 서비스 이미지 : 베이스 이미지 digest 고정, 비root 실행, 모델·AI-BOM 동봉
 FROM python:3.11-slim@sha256:e41613d42d4891e4930f79523f93f81bbc7632584ec65e36ab055f41a800b41e AS build
 WORKDIR /build
-COPY requirements*.txt requirements.lock* ./
-# 해시 고정 파일이 있으면 --require-hashes 로 설치 (CI 에서 생성)
-RUN python -m venv /opt/venv && \
-    if [ -f requirements.lock ]; then /opt/venv/bin/pip install --no-cache-dir --require-hashes -r requirements.lock; \
-    else /opt/venv/bin/pip install --no-cache-dir -r requirements.txt; fi
+COPY requirements.lock ./
+# 해시 고정본으로만 설치 (재생성 : pip-compile --generate-hashes --allow-unsafe -o requirements.lock requirements.txt)
+RUN python -m venv /opt/venv && /opt/venv/bin/pip install --no-cache-dir --require-hashes -r requirements.lock
 
 FROM python:3.11-slim@sha256:e41613d42d4891e4930f79523f93f81bbc7632584ec65e36ab055f41a800b41e
 RUN useradd --uid 10001 --no-create-home --shell /usr/sbin/nologin app
