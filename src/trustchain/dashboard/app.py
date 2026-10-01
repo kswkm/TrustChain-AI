@@ -76,7 +76,7 @@ with tab_overview:
             df = pd.DataFrame([{"심각도": SEV_ICON.get(f["severity"], "") + " " + f["severity"], "룰": f["rule_id"],
                                 "제목": f["title"], "위치": f"{f.get('file') or ''}:{f.get('line') or ''}",
                                 "분류": f.get("category"), "KISA": f.get("kisa") or ""} for f in findings])
-            st.dataframe(df, use_container_width=True, hide_index=True)
+            st.dataframe(df, width="stretch", hide_index=True)
         else:
             st.success("발견된 문제가 없습니다.")
 
@@ -90,7 +90,7 @@ with tab_sbom:
         if not df.empty:
             models = df[df["type"] == "machine-learning-model"]
             st.caption(f"구성요소 {len(df)}개 (AI 모델 {len(models)}개)")
-            st.dataframe(df, use_container_width=True, hide_index=True)
+            st.dataframe(df, width="stretch", hide_index=True)
         else:
             st.info("SBOM 이 없습니다.")
 
@@ -100,7 +100,7 @@ with tab_events:
     if ev:
         df = pd.DataFrame(ev)
         df["결과"] = df["passed"].map({True: "✅ 통과", False: "⛔ 차단"})
-        st.dataframe(df[["created_at", "service", "stage", "결과", "image", "reason"]], use_container_width=True,
+        st.dataframe(df[["created_at", "service", "stage", "결과", "image", "reason"]], width="stretch",
                      hide_index=True)
         st.bar_chart(df.groupby("stage").size())
     else:
@@ -112,7 +112,7 @@ with tab_alerts:
         df = pd.DataFrame(al)
         df["심각도"] = df["severity"].map(lambda s: SEV_ICON.get(s, "") + " " + s)
         st.dataframe(df[["matched_at", "notified_at", "service", "심각도", "vuln_id", "component", "version", "fixed"]],
-                     use_container_width=True, hide_index=True)
+                     width="stretch", hide_index=True)
     else:
         st.success("미해결 취약점 알림이 없습니다.")
 

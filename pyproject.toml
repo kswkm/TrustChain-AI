@@ -42,7 +42,7 @@ ml = [
     "tensorflow>=2.16",
 ]
 dashboard = [
-    "streamlit>=1.33",
+    "streamlit>=1.64",
     "pandas>=2.2",
 ]
 dev = [
