@@ -43,3 +43,14 @@ def test_scenarios_offline_all_blocked():
                        capture_output=True, text=True, encoding="utf-8", timeout=300)
     assert r.returncode == 0, r.stdout + r.stderr
     assert "실행 5종 중 차단 5종" in r.stdout
+
+
+def test_scenario5_lists_unique_cves(tmp_path):
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("run_all", ROOT / "scenarios" / "run_all.py")
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules["run_all"] = mod
+    spec.loader.exec_module(mod)
+    r = mod.s5(tmp_path, True, None)
+    assert r.blocked is True and r.evidence.count("CVE-2024-3094") == 1

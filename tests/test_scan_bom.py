@@ -175,3 +175,19 @@ def test_image_gate_ignores_unfixed_by_default(tmp_path):
     assert out.passed and out.report.counts()["CRITICAL"] == 1  # 보고는 하되 차단하지 않음
     cfg.gate.ignore_unfixed = False
     assert not run_gate(cfg, stages={"image"}, trivy_report=rep, external_tools=False).passed
+
+
+def test_image_gate_blocks_end_of_support_os(tmp_path):
+    # 지원이 끝난 OS(EOSL) 는 앞으로도 패치가 나오지 않으므로 '패치 없음 무시' 정책과 관계없이 차단한다
+    from trustchain.core.config import Config
+    from trustchain.scan.gate import run_gate
+
+    vulns = [{"VulnerabilityID": "CVE-2023-45853", "PkgName": "zlib1g", "InstalledVersion": "1:1.2.11", "Severity": "CRITICAL"}]
+    eosl = {"Metadata": {"OS": {"Family": "debian", "Name": "10.13", "EOSL": True}},
+            "Results": [{"Target": "debian 10.13", "Vulnerabilities": vulns}]}
+    rep = tmp_path / "t.json"
+    rep.write_text(json.dumps(eosl), encoding="utf-8")
+    out = run_gate(Config(root=tmp_path), stages={"image"}, trivy_report=rep, external_tools=False)
+    assert not out.passed
+    f = next(f for f in out.report.findings if f.rule_id == "TC-IMG-006")
+    assert f.severity.value == "CRITICAL" and "debian 10.13" in f.message

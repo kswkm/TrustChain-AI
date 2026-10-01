@@ -17,6 +17,16 @@ _IMAGE_REF = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._\-/:@]{0,254}$")
 
 def parse_trivy(data: dict[str, Any], target: str) -> list[Finding]:
     out: list[Finding] = []
+    os_info = (data.get("Metadata") or {}).get("OS") or {}
+    if os_info.get("EOSL"):
+        # 지원 종료 OS 의 취약점은 앞으로도 패치되지 않으므로 '패치 없음 무시' 정책과 무관하게 차단 대상이다
+        name = f"{os_info.get('Family', '')} {os_info.get('Name', '')}".strip()
+        out.append(Finding(
+            rule_id="TC-IMG-006", title="지원이 끝난 OS 베이스 이미지", severity=Severity.CRITICAL, category="image",
+            file=target, message=f"{name} 은(는) 보안 지원이 종료되어 새 취약점이 패치되지 않습니다.", cwe="CWE-1104",
+            fix="지원 중인 최신 OS 기반 이미지(예: python:3.11-slim 최신 digest)로 교체하세요.", tool="trivy",
+            extra={"os": name},
+        ))
     for res in data.get("Results", []) or []:
         for v in res.get("Vulnerabilities", []) or []:
             sev = Severity.parse(v.get("Severity"))

@@ -146,8 +146,9 @@ def s5(tmp: Path, offline: bool, image: str | None) -> Result:
     out = run_gate(cfg, stages={"image", "docker"}, trivy_report=trivy, image=image or "sample",
                    external_tools=False)
     crit = [f.rule_id for f in out.report.findings if f.category == "image" and f.severity.value == "CRITICAL"]
+    ids = list(dict.fromkeys(crit))  # 같은 CVE 가 여러 OS 패키지에서 나오면 한 번만 표시
     return Result(5, "취약 OS 패키지 베이스 이미지", "빌드 단계 (F5)", not out.passed,
-                  f"{source}: CRITICAL {len(crit)}건 {crit[:3]}")
+                  f"{source}: CRITICAL {len(crit)}건 (항목 {len(ids)}종) {ids[:3]}")
 
 
 def s6(image: str | None, repo: str | None) -> Result:
@@ -178,7 +179,8 @@ def s7(cluster: bool, image: str | None) -> Result:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--offline", action="store_true")
-    ap.add_argument("--image", help="시나리오 5·6·7 에 사용할 실제 이미지 (서명 없는 이미지 digest)")
+    ap.add_argument("--image", help="시나리오 6·7 에 사용할 실제 이미지 (서명 없는 이미지 digest). --vuln-image 가 없으면 5 에도 사용")
+    ap.add_argument("--vuln-image", help="시나리오 5 에서 trivy 로 실제 스캔할 베이스 이미지 (예: 지원 종료된 OS 기반 이미지)")
     ap.add_argument("--repo")
     ap.add_argument("--cluster", action="store_true")
     ap.add_argument("-o", "--output")
@@ -193,7 +195,7 @@ def main() -> int:
         with tempfile.TemporaryDirectory() as d:
             results.append(fn(Path(d), args.offline))
     with tempfile.TemporaryDirectory() as d:
-        results.append(s5(Path(d), args.offline, args.image))
+        results.append(s5(Path(d), args.offline, args.vuln_image or args.image))
     results.append(s6(args.image, args.repo))
     results.append(s7(args.cluster, args.image))
 
