@@ -254,7 +254,8 @@ def verdict_findings(v: PackageVerdict) -> list[Finding]:
             rule_id=vu.id, title=f"취약한 의존성 {v.name}=={v.version}", severity=vu.severity, category="dependency",
             file=v.source, line=v.line, message=f"{vu.id} {('(' + vu.cve + ')') if vu.cve and vu.cve != vu.id else ''} "
             f"{vu.summary}".strip(), fix=f"{v.name}{fixed}" if fixed else "패치 버전이 없습니다. 대체 패키지나 완화 조치를 검토하세요.",
-            tool="osv", extra={"package": v.name, "version": v.version, "fixed": vu.fixed_versions, "cvss": vu.cvss_score},
+            tool="osv", extra={"package": v.name, "version": v.version, "fixed": vu.fixed_versions, "cvss": vu.cvss_score,
+                               "aliases": [vu.id, *vu.aliases, *([vu.cve] if vu.cve else [])]},
         ))
     return out
 

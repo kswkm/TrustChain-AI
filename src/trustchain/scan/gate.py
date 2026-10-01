@@ -15,6 +15,7 @@ from trustchain.packages.checker import PackageChecker, PackageVerdict
 from trustchain.packages.osv import OSVClient
 from trustchain.packages.pypi import PyPIClient
 from trustchain.packages.scorecard import ScorecardClient
+from trustchain.scan import deps
 from trustchain.scan.image import check_dockerfiles, parse_trivy, scan_image
 from trustchain.scan.modelscan import scan_models
 from trustchain.secure_coding.runner import run_secure_coding
@@ -79,6 +80,9 @@ def run_gate(
         checker = checker or make_checker(cfg)
         verdicts, pf = checker.check_project(root)
         report.extend(pf)
+        if external_tools:
+            # pip-audit · OSV-Scanner : 자체 OSV 조회와 같은 취약점(별칭 포함)은 한 건만 남긴다
+            report.extend(deps.merge_dependency_findings(report.findings, deps.run_osv_scanner(root) + deps.run_pip_audit(root)))
     if "models" in stages:
         _, mf = scan_models(root, cfg.exclude, root)
         report.extend(mf)
