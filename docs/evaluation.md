@@ -73,10 +73,21 @@ Verify Gate 와 Kyverno 정책은 이 빌더 ID 로 만들어진 증명만 허�
 
 **실행 결과** : 커밋 `c271b15` 의 [CI 실행](https://github.com/kswkm/TrustChain-AI/actions/runs/36807577616)에서 platform(`trustchain-platform`)·demo(`mnist-api`) 이미지 2종 모두
 이미지 빌드 → cosign keyless 서명·SBOM/AI-BOM 증명 첨부 → SLSA L3 출처 증명 생성(detect-env · generator · final) 잡이 성공했습니다.
-생성된 증명을 Verify Gate(`trustchain-cd.yml`)·Kyverno 로 검증하는 실측은 아직 하지 않았습니다.
+생성된 이미지를 Verify Gate(`trustchain verify <image@digest> --require-aibom`, cosign v2.4.1 · slsa-verifier v2.6.0 — CD 와 같은 버전)로
+검증한 결과 두 이미지 모두 6개 항목(digest 지정 · cosign 서명 · 서명 클레임 · SLSA 출처 증명 · SBOM 증명 · AI-BOM 증명)을 통과했습니다.
+Kyverno `trustchain-verify-images` 정책도 이 이미지(`ghcr.io/kswkm/mnist-api@sha256:972f1e92…`)의 Pod 생성을 허용했습니다 (5절).
 
 ## 5. 공급망 공격 시나리오 (목표 7종 전부 차단)
 
-`python scenarios/run_all.py --offline` → 로컬에서 재현할 수 있는 1~5번 **5종 모두 차단**. 6(서명 없는 이미지)·7(kubectl 우회)은
-레지스트리·Kyverno 클러스터에서 실행해야 하며 절차는 [scenarios.md](scenarios.md) 에 있습니다. Verify Gate 의 판정 로직은
+`python scenarios/run_all.py --offline --cluster --image <서명 없는 이미지@digest>` → **실행 7종 중 차단 7종**.
+
+- 1~5번 : 로컬 재현 (5번은 Trivy 샘플 리포트, `--image` 와 trivy 가 있으면 실제 스캔).
+- 6번 : CI 이미지에 레이어를 덧붙여 개발자 PC 에서 다시 빌드한 서명 없는 이미지(`ghcr.io/kswkm/mnist-api@sha256:bdd15eea…`)를 GHCR 에 직접 push →
+  Verify Gate 가 cosign 서명·SLSA 출처 증명·SBOM·AI-BOM 증명 4개 항목 실패로 배포 차단 (종료 코드 1).
+- 7번 : kind(Kubernetes v1.37) + Kyverno v1.19.1 클러스터에 `deploy/k8s` 의 네임스페이스·정책을 적용하고 `kubectl run` 으로 직접 배포 →
+  `admission webhook "mutate.kyverno.svc-fail" denied the request ... trustchain-verify-images ... no signatures found`.
+- 대조 : 같은 보안 설정의 Pod 명세에서 이미지만 CI 서명 이미지(`ghcr.io/kswkm/mnist-api@sha256:972f1e92…`)로 바꾸면 Kyverno 가 허용합니다.
+  즉 차단 원인은 서명·증명 유무이며, 정책이 모든 이미지를 막는 것이 아닙니다.
+
+절차는 [scenarios.md](scenarios.md) 에 있습니다. Verify Gate 의 판정 로직은
 `tests/test_verify.py` 에서 서명 없음·저장소 불일치·출처 증명 없음·태그 참조를 각각 거부하는지 확인합니다.
