@@ -141,3 +141,38 @@ def test_assistant_endpoint(env):
     assert r.status_code == 200
     body = r.json()
     assert body["grounded"] and body["citations"]
+
+
+def test_safe_filename_normalizes_paths():
+    from trustchain.server.uploads import safe_filename
+
+    assert safe_filename("../../etc/sbom.json") == "sbom.json"
+    assert safe_filename("C:\\temp\\..\\my sbom (1).json") == "my_sbom__1_.json"
+    assert safe_filename("") == "upload"
+    assert len(safe_filename("a" * 500 + ".json")) <= 128 and safe_filename("a" * 500 + ".json").endswith(".json")
+
+
+def test_sbom_file_upload(env, monkeypatch):
+    import json
+
+    client, tok, *_ = env
+    up = {"file": ("../../etc/sbom.json", json.dumps(SBOM).encode(), "application/json")}
+    r = client.post("/api/v1/sboms/upload", data={"service": "upl", "digest": DIGEST}, files=up, headers=H(tok["ingest"]))
+    assert r.status_code == 201 and r.json()["components"] == 3 and r.json()["filename"] == "sbom.json"
+
+    bad_ext = {"file": ("sbom.exe", b"{}", "application/octet-stream")}
+    assert client.post("/api/v1/sboms/upload", data={"service": "upl"}, files=bad_ext,
+                       headers=H(tok["ingest"])).status_code == 415
+    not_json = {"file": ("sbom.json", b"\xff\xfe not json", "application/json")}
+    assert client.post("/api/v1/sboms/upload", data={"service": "upl"}, files=not_json,
+                       headers=H(tok["ingest"])).status_code == 422
+    spdx = {"file": ("sbom.json", json.dumps({"bomFormat": "SPDX"}).encode(), "application/json")}
+    assert client.post("/api/v1/sboms/upload", data={"service": "upl"}, files=spdx,
+                       headers=H(tok["ingest"])).status_code == 422
+    assert client.post("/api/v1/sboms/upload", data={"service": "upl"}, files=up,
+                       headers=H(tok["reader"])).status_code == 403
+
+    monkeypatch.setenv("TRUSTCHAIN_MAX_UPLOAD", "100")
+    big = {"file": ("sbom.json", b" " * 200 + b"{}", "application/json")}
+    assert client.post("/api/v1/sboms/upload", data={"service": "upl"}, files=big,
+                       headers=H(tok["ingest"])).status_code == 413

@@ -15,6 +15,8 @@ import streamlit as st
 
 API = os.environ.get("TRUSTCHAIN_API", "http://localhost:8000").rstrip("/")
 TOKEN = os.environ.get("TRUSTCHAIN_TOKEN", "")
+# SBOM 파일 업로드용 ingest 토큰 (선택). 없으면 업로드 화면을 숨겨 대시보드는 reader 권한만 쓴다
+UPLOAD_TOKEN = os.environ.get("TRUSTCHAIN_UPLOAD_TOKEN", "")
 SEV_ICON = {"CRITICAL": "🟥", "HIGH": "🟧", "MEDIUM": "🟨", "LOW": "🟦", "INFO": "⬜"}
 
 st.set_page_config(page_title="TrustChain AI", page_icon="🛡️", layout="wide")
@@ -93,6 +95,23 @@ with tab_sbom:
             st.dataframe(df, width="stretch", hide_index=True)
         else:
             st.info("SBOM 이 없습니다.")
+    if UPLOAD_TOKEN:
+        with st.expander("SBOM 파일 업로드 (CycloneDX JSON, 최대 10MB)"):
+            svc = st.text_input("서비스 이름", max_chars=64, key="upsvc")
+            up = st.file_uploader("SBOM 파일", type=["json"], max_upload_size=10)
+            if up is not None and svc and st.button("업로드"):
+                try:
+                    r = httpx.post(API + "/api/v1/sboms/upload", headers={"Authorization": f"Bearer {UPLOAD_TOKEN}"},
+                                   data={"service": svc}, files={"file": (up.name, up.getvalue(), "application/json")},
+                                   timeout=120)
+                except httpx.HTTPError:
+                    st.error("수집 API 에 연결할 수 없습니다.")
+                else:
+                    if r.status_code == 201:
+                        st.success(f"{r.json()['filename']} : 구성요소 {r.json()['components']}개 수집")
+                        services.clear()
+                    else:
+                        st.error(f"업로드 실패 (HTTP {r.status_code})")
 
 with tab_events:
     only_blocked = st.toggle("차단된 이벤트만", value=True)

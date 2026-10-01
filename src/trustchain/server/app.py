@@ -9,15 +9,17 @@
 # 주의: FastAPI 가 create_app() 내부의 Annotated 의존성 별칭을 해석해야 하므로 `from __future__ import annotations` 를 쓰지 않는다.
 
 
+import json
 import os
 import threading
 import uuid
 from contextlib import asynccontextmanager
 from typing import Annotated, Any, Callable
 
-from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from fastapi import Depends, FastAPI, Form, HTTPException, Query, Request, UploadFile
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -27,6 +29,7 @@ from trustchain.server import services
 from trustchain.server.auth import authenticate, has_role
 from trustchain.server.db import Alert, ApiToken, GateEvent, Service, init_db, make_engine, make_session_factory
 from trustchain.server.schemas import AskIn, AskOut, EventIn, ReportIn, SBOMIn
+from trustchain.server.uploads import check_suffix, read_limited, safe_filename
 
 log = get_logger("trustchain.api")
 MAX_BODY = int(os.environ.get("TRUSTCHAIN_MAX_BODY", str(20 * 1024 * 1024)))
@@ -164,6 +167,25 @@ def create_app(database_url: str | None = None, monitor=None, assistant_factory=
             except Exception as e:  # 매칭 실패가 수집을 막지 않도록
                 log.warning("SBOM 즉시 매칭 실패: %s", e.__class__.__name__)
         return {"artifact_id": art.id, "components": n, "match": stats}
+
+    @app.post("/api/v1/sboms/upload", status_code=201)
+    async def upload_sbom(s: DB, _: Ingest, file: UploadFile, service: Annotated[str, Form()],
+                          digest: Annotated[str | None, Form()] = None,
+                          image: Annotated[str | None, Form()] = None) -> dict[str, Any]:
+        # 파일명은 응답 표시용으로만 정규화해 쓰고, 파일은 디스크에 저장하지 않는다
+        name = safe_filename(file.filename)
+        check_suffix(name)
+        raw = await read_limited(file)
+        try:
+            sbom = json.loads(raw.decode("utf-8"))
+        except (UnicodeDecodeError, ValueError):
+            raise HTTPException(422, "JSON 형식이 아닙니다") from None
+        try:
+            body = SBOMIn(service=service, digest=digest, image=image, sbom=sbom)
+        except ValidationError as e:
+            raise HTTPException(422, [{"loc": x.get("loc"), "msg": x.get("msg")} for x in e.errors()[:20]]) from None
+        out = post_sbom(body, s, _)
+        return out | {"filename": name}
 
     @app.post("/api/v1/events", status_code=201)
     def post_event(body: EventIn, s: DB, _: Ingest) -> dict[str, Any]:
