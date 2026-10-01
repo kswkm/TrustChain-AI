@@ -60,7 +60,7 @@ trustchain = "trustchain.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-trustchain = ["data/*.txt", "data/*.json", "secure_coding/*.yml", "knowledge/*/*.md", "knowledge/osv/*.json"]
+trustchain = ["data/*.txt", "data/*.json", "data/*.keras", "data/*.keras.json", "data/*.sha256", "secure_coding/*.yml", "knowledge/*/*.md", "knowledge/osv/*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

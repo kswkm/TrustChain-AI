@@ -11,7 +11,7 @@ from packaging.utils import canonicalize_name
 
 from trustchain.core.config import Config
 from trustchain.core.findings import Finding, Severity
-from trustchain.packages.classifier import LinearModel, Prediction, feature_vector, predict
+from trustchain.packages.classifier import KerasModel, LinearModel, Prediction, feature_vector, load_default_model, predict
 from trustchain.packages.imports import IMPORT_MAP, candidate_distributions, collect_imports
 from trustchain.packages.osv import OSVClient, Vuln
 from trustchain.packages.pypi import MetaSource, PackageMeta
@@ -46,6 +46,7 @@ class PackageVerdict:
     vulns: list[Vuln] = field(default_factory=list)
     source: str = ""
     line: int | None = None
+    model: str = ""  # 판정 주체 : 분류 모델 이름, 또는 모델 이전에 결론 낸 "규칙 (...)"
 
     def to_dict(self) -> dict:
         return {
@@ -56,7 +57,7 @@ class PackageVerdict:
             "trust_notes": self.trust.notes if self.trust else [],
             "vulns": [{"id": v.id, "severity": v.severity.value, "fixed": v.fixed_versions, "summary": v.summary}
                       for v in self.vulns],
-            "source": self.source, "line": self.line,
+            "source": self.source, "line": self.line, "model": self.model,
         }
 
 
@@ -74,14 +75,14 @@ class PackageChecker:
         pypi: MetaSource,
         osv: OSVClient | None = None,
         scorecard: ScorecardClient | None = None,
-        model: LinearModel | None = None,
+        model: LinearModel | KerasModel | None = None,
         now: datetime | None = None,
     ):
         self.cfg = cfg
         self.pypi = pypi
         self.osv = osv
         self.scorecard = scorecard
-        self.model = model or LinearModel.load_default()
+        self.model = model or load_default_model()
         self.now = now
         self.allow = {canonicalize_name(a) for a in cfg.allow_packages}
 
@@ -94,6 +95,7 @@ class PackageChecker:
         v = PackageVerdict(dep.name, dep.raw_name, dep.pinned_version, "정상", source=dep.source, line=dep.line)
         if dep.name in self.allow:
             v.reasons.append("허용 목록(allow_packages)에 등록된 패키지")
+            v.model = "규칙 (허용 목록)"
             return v
         if dep.url:
             if dep.url.startswith("git+") and not _PINNED_VCS.search(dep.url):
@@ -102,12 +104,14 @@ class PackageChecker:
             elif not dep.url.startswith("git+"):
                 v.verdict = "주의"
                 v.reasons.append("레지스트리 밖 URL 직접 참조 (출처 검증 불가)")
+            v.model = "규칙 (직접 URL 참조)"
             return v
 
         meta = self.pypi.get(dep.name)
         if meta.lookup_error:
             v.verdict = "주의"
             v.reasons.append(f"PyPI 조회 실패로 검증하지 못함 ({meta.lookup_error})")
+            v.model = "규칙 (PyPI 조회 실패)"
             return v
         if not meta.exists:
             v.verdict = "차단"
@@ -119,6 +123,7 @@ class PackageChecker:
             if nf.nearest:
                 v.nearest_popular = nf.nearest
                 v.reasons.append(f"의도한 패키지가 '{nf.nearest}' 인지 확인하세요.")
+            v.model = "규칙 (PyPI 에 없는 패키지)"
             return v
 
         if dep.name in _IMPORT_ONLY_NAMES:
@@ -130,6 +135,7 @@ class PackageChecker:
         v.nearest_popular = nf.nearest
         pred: Prediction = predict(self.model, feature_vector(nf, meta, self.now))
         v.probs = pred.probs
+        v.model = pred.model
         if not nf.is_popular:
             v.verdict = _raise(v.verdict, pred.label)
             if pred.label != "정상":

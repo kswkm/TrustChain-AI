@@ -143,6 +143,8 @@ def cmd_pkg(args: argparse.Namespace) -> int:
         if args.format == "text":
             print(f"{_c(v.verdict, VERDICT_COLOR[v.verdict])} {v.raw_name}  (정상 {v.probs.get('정상', '-')}, "
                   f"주의 {v.probs.get('주의', '-')}, 차단 {v.probs.get('차단', '-')})")
+            if v.model:
+                print(f"   판정 모델 : {v.model}")
             for r in v.reasons:
                 print(f"   - {r}")
             if v.trust:

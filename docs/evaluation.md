@@ -5,18 +5,29 @@
 ## 1. 타이포스쿼팅·환각 패키지 탐지 (목표 F1 ≥ 0.9)
 
 ```bash
-trustchain model eval                  # 기본 탑재 모델 (src/trustchain/data/package_model.json)
-trustchain model train --out m.json    # 재학습 (다항 로지스틱 회귀, numpy)
-trustchain model train --backend keras --out m.keras   # TensorFlow(Keras) 분류 모델 (pip install .[ml])
+# 기본 판정 모델 : TensorFlow(Keras) (tensorflow-cpu 2.18.0, 학습 기록 src/trustchain/data/package_model.keras.json)
+trustchain model eval --out src/trustchain/data/package_model.keras
+trustchain model train --backend keras --out m.keras   # 재학습 (seed 7 고정, tensorflow-cpu 2.18.0 + keras 3.15.1 에서 같은 평가 결과 확인)
+# 경량 대체 모델 : 다항 로지스틱 회귀 (TensorFlow 미설치 환경)
+trustchain model eval                  # src/trustchain/data/package_model.json
+trustchain model train --out m.json
 ```
+
+**TensorFlow(Keras) 분류 모델** (Dense 32 → Dropout 0.1 → Dense 16 → softmax 3, 60 epoch, 클래스 가중치)
 
 | 클래스 | precision | recall | F1 | support |
 |---|---|---|---|---|
-| 정상 | 0.995 | 0.985 | 0.990 | 198 |
-| 주의 | 0.824 | 0.978 | 0.895 | 91 |
-| 차단 | 0.993 | 0.941 | 0.966 | 287 |
-| **macro F1** | | | **0.950** | 576 |
-| **위험 탐지 F1** (주의+차단 vs 정상) | | | **0.995** | |
+| 정상 | 0.995 | 1.000 | 0.998 | 198 |
+| 주의 | 0.968 | 1.000 | 0.984 | 91 |
+| 차단 | 1.000 | 0.986 | 0.993 | 287 |
+| **macro F1** | | | **0.991** | 576 |
+| **위험 탐지 F1** (주의+차단 vs 정상) | | | **0.999** | |
+
+**경량 선형 모델** (같은 평가셋) : macro F1 0.950, 위험 탐지 F1 0.995 (정상 0.990 · 주의 0.895 · 차단 0.966)
+
+**판정 모델 선택** : TensorFlow(Keras 3)가 설치돼 있으면 Keras 모델, 없으면 경량 선형 모델로 판정합니다(`TRUSTCHAIN_PKG_MODEL=keras|linear` 로 강제).
+탑재 Keras 모델은 코드에 고정한 SHA-256 과 일치해야 로드되며(`safe_mode`), 불일치 시 다른 모델로 대체하지 않고 오류로 중단합니다.
+CI 게이트는 Keras 판정을 강제합니다.
 
 **평가셋 구성** (`packages/training.py`, seed 7) — 자체 구축 합성 데이터
 - 정상 : 인기 패키지 407개(오래됨·배포 이력 많음) + 인기 목록과 편집거리 3 이상인 임의 이름의 소규모 정상 패키지
