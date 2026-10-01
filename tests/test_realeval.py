@@ -206,6 +206,9 @@ def test_evaluate_real_report(tmp_path):
         assert 0.0 <= grp["auc"] <= 1.0
         assert grp["fpr_1pct"] <= 0.01 and grp["fpr_5pct"] <= 0.05
     assert "malicious" not in rep and "precision_at_prevalence" not in rep
+    assert ns["typosquat"]["near_popular_le2"] == 1                    # reqeusts ↔ requests (편집거리 1)
+    counts = rep["conditions"]["benign_class_without_metadata"]
+    assert set(counts) <= {"정상", "주의", "차단"} and sum(counts.values()) == 4
     assert rep["benign"]["rank"]["n"] == 2 and rep["benign"]["random"]["n"] == 2 and rep["benign"]["all"]["n"] == 4
     assert rep["conditions"]["collected_at"] == NOW.isoformat()
 

@@ -12,6 +12,7 @@ import io
 import json
 import random
 import zipfile
+from collections import Counter
 from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
@@ -21,9 +22,9 @@ import httpx
 from packaging.utils import canonicalize_name
 
 from trustchain.core.http import USER_AGENT
-from trustchain.packages.classifier import feature_vector
+from trustchain.packages.classifier import LABELS, feature_vector
 from trustchain.packages.pypi import MetaSource, PackageMeta
-from trustchain.packages.typosquat import name_features, popular_packages
+from trustchain.packages.typosquat import name_features, osa_distance, popular_packages
 
 OSV_URL = "https://osv-vulnerabilities.storage.googleapis.com/PyPI/all.zip"
 TOP_URL = "https://hugovk.github.io/top-pypi-packages/top-pypi-packages-30-days.min.json"
@@ -219,16 +220,22 @@ def evaluate_real(model: Any, snapshot_dir: Path) -> dict[str, Any]:
     ben = _read_jsonl(snapshot_dir / "benign.jsonl")
     # 이름 신호 : 악성·정상 모두 메타데이터 없이 (같은 조건) 위험 확률 = 1 - P(정상)
     mal_s = [(r, 1.0 - proba(r["name"], None)[0]) for r in mal]
-    ben_s = [1.0 - proba(r["name"], None)[0] for r in ben]
+    ben_none = [proba(r["name"], None) for r in ben]
+    ben_s = [1.0 - pr[0] for pr in ben_none]
+    typo_names = [r["name"] for r in mal if r["typosquat"]]
+    near = sum(1 for n in typo_names if min(osa_distance(n, q) for q in pop) <= 2)
     # 실사용 오탐 : 정상 패키지를 실제 메타데이터로 판정
     ben_c = [(r, cls(proba(r["name"], PackageMeta.from_dict(r["meta"])))) for r in ben]
     return {
         "model": getattr(model, "backend", ""),
-        "name_signal": {"typosquat": _name_signal([s for r, s in mal_s if r["typosquat"]], ben_s),
+        "name_signal": {"typosquat": _name_signal([s for r, s in mal_s if r["typosquat"]], ben_s)
+                        | {"near_popular_le2": near},
                         "all": _name_signal([s for _, s in mal_s], ben_s)},
         "benign": {s: _fp_rates([c for r, c in ben_c if r["source"] == s]) for s in ("rank", "random")}
         | {"all": _fp_rates([c for _, c in ben_c])},
         "conditions": {"name_signal": "악성·정상 모두 메타데이터 없이 위험 확률(1-P(정상)) 비교 (악성은 삭제되어 메타데이터 없음)",
                        "benign_metadata": "수집 시점 PyPI 실제 메타데이터",
+                       "benign_class_without_metadata": dict(Counter(LABELS[cls(pr)] for pr in ben_none)),
+                       "popular_list_size": len(pop),
                        "collected_at": manifest["collected_at"], "osv_sha256": manifest["osv"]["sha256"]},
     }
