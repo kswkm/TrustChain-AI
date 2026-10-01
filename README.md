@@ -124,7 +124,7 @@ Kubernetes 배포는 `kubectl apply -k deploy/k8s` ([deploy/k8s](deploy/k8s)).
   실제 PyPI 분포에서의 성능은 실측 라벨 데이터로 따로 확인해야 합니다.
 - 패키지 판정 모델 : TensorFlow 가 설치된 환경(CI 게이트, `.[ml]`)은 TensorFlow(Keras) 모델로, 설치되지 않은 환경(가벼운 pre-commit)은
   같은 평가셋에서 위험 탐지 F1 0.995 · macro F1 0.950 인 경량 선형 모델로 판정합니다. CI 게이트는 `TRUSTCHAIN_PKG_MODEL=keras` 로 Keras 판정을 강제하며,
-  판정 결과에 사용한 모델이 표시됩니다.
+  판정 결과에는 판정 주체(분류 모델 이름, 또는 PyPI 에 없는 패키지처럼 모델 이전에 결론 난 경우 "규칙 (...)")가 표시됩니다.
 - RAG 수치는 외부 모델 없이 측정한 기준선(해싱 임베딩, 어휘 리랭커, 평가셋 32문항)입니다. 다국어 임베딩 모델과 Cross-encoder 를 설치하면(`.[ai]`)
   같은 명령으로 다시 측정할 수 있습니다.
 

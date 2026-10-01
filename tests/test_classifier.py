@@ -5,6 +5,7 @@ import json
 import sys
 import types
 from importlib import resources
+from pathlib import Path
 
 import pytest
 
@@ -19,6 +20,8 @@ from trustchain.packages.classifier import (
     load_default_model,
     predict,
 )
+from trustchain.packages.pypi import PackageMeta
+from trustchain.packages.requirements import Dependency
 from trustchain.packages.training import build_dataset, evaluate, split, train_and_save, train_keras
 
 
@@ -111,3 +114,54 @@ def test_bundled_keras_meets_target(monkeypatch):
     monkeypatch.setenv("TRUSTCHAIN_PKG_MODEL", "keras")
     _, test = split(build_dataset(seed=7), seed=7)
     assert evaluate(load_default_model(), test)["risk_detection_f1"] >= 0.9
+
+
+def _fake_keras(load_error: Exception) -> types.SimpleNamespace:
+    def load_model(*a, **kw):
+        raise load_error
+
+    return types.SimpleNamespace(__version__="3.8.0", saving=types.SimpleNamespace(load_model=load_model))
+
+
+def test_auto_unloadable_keras_falls_back_to_linear(monkeypatch):
+    # Keras 3.5~3.12 는 3.15 로 저장한 모델 설정을 읽지 못한다 → CLI 가 죽지 않고 경량 모델로 대체
+    monkeypatch.delenv("TRUSTCHAIN_PKG_MODEL", raising=False)
+    monkeypatch.setitem(sys.modules, "keras", _fake_keras(TypeError("Unrecognized keyword arguments")))
+    assert isinstance(load_default_model(), LinearModel)
+
+
+def test_forced_unloadable_keras_raises_runtime(monkeypatch):
+    monkeypatch.setenv("TRUSTCHAIN_PKG_MODEL", "keras")
+    monkeypatch.setitem(sys.modules, "keras", _fake_keras(TypeError("Unrecognized keyword arguments")))
+    with pytest.raises(RuntimeError, match="keras"):
+        load_default_model()
+
+
+def test_auto_hash_mismatch_still_raises_integrity_error(monkeypatch):
+    # 자동 모드의 대체 경로가 무결성 오류까지 삼키면 안 된다
+    monkeypatch.delenv("TRUSTCHAIN_PKG_MODEL", raising=False)
+    monkeypatch.setattr(classifier, "KERAS_MODEL_SHA256", "0" * 64)
+    monkeypatch.setitem(sys.modules, "keras", _fake_keras(AssertionError("must not load")))
+    with pytest.raises(classifier.ModelIntegrityError):
+        load_default_model()
+
+
+def test_ci_gate_pins_keras_version_of_bundled_model():
+    # 게이트에서 모델을 읽는 Keras 버전이 학습 버전과 달라지지 않도록 CI 설치 줄에 고정
+    ver = json.loads(resources.files("trustchain.data").joinpath("package_model.keras.json").read_text("utf-8"))["keras"]
+    ci = (Path(__file__).resolve().parents[1] / ".github" / "workflows" / "trustchain-ci.yml").read_text(encoding="utf-8")
+    assert f"keras=={ver}" in ci
+
+
+@pytest.mark.parametrize(("dep", "label"), [
+    (Dependency("fastapi-auth-shield", "fastapi-auth-shield"), "규칙 (PyPI 에 없는 패키지)"),
+    (Dependency("internal-lib", "internal-lib"), "규칙 (허용 목록)"),
+    (Dependency("private-pkg", "private-pkg", url="https://files.example.com/private_pkg-1.0-py3-none-any.whl"),
+     "규칙 (직접 URL 참조)"),
+    (Dependency("timeout-pkg", "timeout-pkg"), "규칙 (PyPI 조회 실패)"),
+])
+def test_rule_decided_verdict_names_the_rule(cfg, fake_pypi, dep, label):
+    # 분류 모델이 판정하지 않은 결과에 모델 이름을 붙이지 않고, 무엇이 판정했는지 밝힌다
+    cfg.allow_packages = ["internal-lib"]
+    fake_pypi.metas["timeout-pkg"] = PackageMeta(name="timeout-pkg", exists=False, lookup_error="timeout")
+    assert PackageChecker(cfg, fake_pypi).check_dependency(dep).to_dict()["model"] == label

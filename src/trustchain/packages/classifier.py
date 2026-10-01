@@ -17,6 +17,7 @@ from datetime import datetime
 from importlib import resources
 from pathlib import Path
 
+from trustchain.core.logging import get_logger
 from trustchain.packages.pypi import PackageMeta
 from trustchain.packages.typosquat import NameFeatures
 
@@ -61,6 +62,10 @@ def meta_vector(meta: PackageMeta | None, now: datetime | None = None) -> list[f
 
 def feature_vector(nf: NameFeatures, meta: PackageMeta | None, now: datetime | None = None) -> list[float]:
     return nf.vector() + meta_vector(meta, now)
+
+
+class ModelIntegrityError(ValueError):
+    """모델 파일 해시 불일치 : 어떤 경우에도 다른 모델로 대체하지 않고 중단한다."""
 
 
 @dataclass
@@ -126,7 +131,7 @@ class KerasModel:
         sidecar = path.with_suffix(".sha256")
         expected = expected_sha256 or (sidecar.read_text().strip().split()[0] if sidecar.exists() else None)
         if not expected or digest != expected:
-            raise ValueError(f"모델 해시 불일치 또는 해시 정보 없음: {path.name}")
+            raise ModelIntegrityError(f"모델 해시 불일치 또는 해시 정보 없음: {path.name}")
         import keras  # 선택 의존성
 
         self.model = keras.saving.load_model(path, safe_mode=True, compile=False)
@@ -171,13 +176,16 @@ def load_default_model() -> LinearModel | KerasModel:
     try:
         import keras
 
-        major = int(str(keras.__version__).split(".")[0])
-    except (ImportError, AttributeError, ValueError):
-        major = 0
-    if major < 3:  # 미설치 또는 Keras 2 (.keras v3 형식을 읽지 못함)
+        if int(str(keras.__version__).split(".")[0]) < 3:  # Keras 2 는 .keras v3 형식을 읽지 못함
+            raise ImportError(f"Keras {keras.__version__} (Keras 3 필요)")
+        with resources.as_file(resources.files("trustchain.data").joinpath(KERAS_MODEL_FILE)) as path:
+            return KerasModel(path, expected_sha256=KERAS_MODEL_SHA256)
+    except ModelIntegrityError:
+        raise
+    except Exception as e:  # 미설치·구버전 Keras 3(3.15 저장 형식 미지원)·깨진 TF 설치
         if mode == "keras":
-            raise RuntimeError("TRUSTCHAIN_PKG_MODEL=keras 이지만 Keras 3 를 사용할 수 없습니다: "
-                               "pip install tensorflow-cpu==2.18.0")
+            raise RuntimeError(f"TRUSTCHAIN_PKG_MODEL=keras 이지만 탑재 Keras 모델을 불러올 수 없습니다 ({e}): "
+                               "pip install tensorflow-cpu==2.18.0 keras==3.15.1") from e
+        if not isinstance(e, ImportError):
+            get_logger().warning("Keras 모델을 불러오지 못해 경량 선형 모델로 판정합니다: %s", e)
         return LinearModel.load_default()
-    with resources.as_file(resources.files("trustchain.data").joinpath(KERAS_MODEL_FILE)) as path:
-        return KerasModel(path, expected_sha256=KERAS_MODEL_SHA256)

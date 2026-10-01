@@ -7,7 +7,7 @@
 ```bash
 # 기본 판정 모델 : TensorFlow(Keras) (tensorflow-cpu 2.18.0, 학습 기록 src/trustchain/data/package_model.keras.json)
 trustchain model eval --out src/trustchain/data/package_model.keras
-trustchain model train --backend keras --out m.keras   # 재학습 (pip install .[ml], seed 7 고정 → 같은 평가 결과)
+trustchain model train --backend keras --out m.keras   # 재학습 (seed 7 고정, tensorflow-cpu 2.18.0 + keras 3.15.1 에서 같은 평가 결과 확인)
 # 경량 대체 모델 : 다항 로지스틱 회귀 (TensorFlow 미설치 환경)
 trustchain model eval                  # src/trustchain/data/package_model.json
 trustchain model train --out m.json
