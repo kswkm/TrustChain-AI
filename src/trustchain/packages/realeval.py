@@ -39,6 +39,8 @@ def load_osv_malicious(zip_bytes: bytes) -> list[dict[str, Any]]:
             if not (fn.startswith("MAL-") and fn.endswith(".json")):
                 continue
             d = json.loads(z.read(fn))
+            if d.get("withdrawn"):  # 오탐으로 철회된 보고는 악성 라벨이 아니다
+                continue
             typo = "typosquat" in f"{d.get('summary') or ''} {d.get('details') or ''}".lower()
             for a in d.get("affected") or []:
                 pkg = a.get("package") or {}

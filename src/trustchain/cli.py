@@ -442,13 +442,19 @@ def cmd_model(args: argparse.Namespace) -> int:
         if not (Path(args.data_dir) / "manifest.json").is_file():
             print(f"실측 스냅샷이 없습니다: {args.data_dir}. 먼저 `trustchain model real-data` 를 실행하세요.", file=sys.stderr)
             return 2
-        model = KerasModel(Path(args.out)) if args.out.endswith(".keras") else (
-            LinearModel.load(Path(args.out)) if Path(args.out).is_file() else LinearModel.load_default())
+        # --out 을 명시하지 않으면 작업 디렉터리의 파일과 무관하게 탑재 모델로 평가한다 (문서 수치 재현)
+        if not args.out:
+            model = LinearModel.load_default()
+        elif args.out.endswith(".keras"):
+            model = KerasModel(Path(args.out))
+        else:
+            model = LinearModel.load(Path(args.out))
         print(json.dumps(evaluate_real(model, Path(args.data_dir)), ensure_ascii=False, indent=2))
         return 0
 
     from trustchain.packages.training import build_dataset, evaluate, split, train_and_save
 
+    args.out = args.out or "package_model.json"
     if args.action == "train":
         rep = train_and_save(args.out, backend=args.backend, seed=args.seed)
     else:
@@ -617,7 +623,7 @@ def build_parser() -> argparse.ArgumentParser:
     sp = sub.add_parser("model", help="패키지 위험 분류 모델 학습·평가 (real-data/eval-real: 실제 PyPI 데이터 검증)")
     sp.add_argument("action", choices=["train", "eval", "real-data", "eval-real"])
     sp.add_argument("--backend", choices=["linear", "keras"], default="linear")
-    sp.add_argument("--out", default="package_model.json")
+    sp.add_argument("--out", help="모델 파일 (train/eval 기본 package_model.json, eval-real 기본 탑재 모델)")
     sp.add_argument("--seed", type=int, default=7)
     sp.add_argument("--data-dir", default="eval/pkg_real", help="실측 스냅샷 경로")
     sp.set_defaults(func=cmd_model)

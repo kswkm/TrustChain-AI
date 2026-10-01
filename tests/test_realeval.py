@@ -61,6 +61,22 @@ def test_load_osv_only_mal_and_tag():
         ("reqeusts", True, "MAL-2025-1"), ("testingpy", False, "MAL-2025-2")]
 
 
+def test_load_osv_skips_withdrawn():
+    w = mal("MAL-2026-9", ["fastapi"], "typosquat-shaped name")
+    w["withdrawn"] = "2026-05-26T00:00:00Z"
+    rows = load_osv_malicious(osv_zip({"MAL-2026-9.json": w, "MAL-2025-2.json": mal("MAL-2025-2", ["testingpy"])}))
+    assert [r["name"] for r in rows] == ["testingpy"]
+
+
+def test_cli_eval_real_ignores_stray_model_file(tmp_path, capsys, monkeypatch):
+    # 작업 디렉터리에 다른 모델 파일(package_model.json)이 있어도 --out 을 주지 않으면 탑재 모델로 평가한다
+    snap = make_snapshot(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "package_model.json").write_text("{not a model", encoding="utf-8")
+    assert main(["model", "eval-real", "--data-dir", str(snap)]) == 0
+    assert json.loads(capsys.readouterr().out)["model"] == "경량 선형 모델"
+
+
 def test_load_osv_dedup_and_multi_affected():
     z = osv_zip({
         "MAL-2025-1.json": mal("MAL-2025-1", ["a-pkg", "b-pkg"]),
