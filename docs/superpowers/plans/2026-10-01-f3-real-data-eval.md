@@ -616,3 +616,22 @@ def evaluate_real(model: Any, snapshot_dir: Path) -> dict[str, Any]:
 - [ ] **Step 6: 확인** — `.venv\Scripts\python.exe -m pytest -q` PASS, 문서 수치가 Step 3 출력과 일치하는지 대조.
 
 - [ ] **Step 7: Commit** — `docs,eval: F3 분류 모델 실제 PyPI 데이터 검증 결과` (스냅샷 3개 파일 포함, 본문에 핵심 수치)
+
+---
+
+### Task 4a (개정, 스펙 8절) : 이름 신호 지표로 교체
+
+**Files:** Modify `src/trustchain/packages/realeval.py`, `tests/test_realeval.py`
+
+**Interfaces:**
+- Produces: `auc(pos: list[float], neg: list[float]) -> float`, `tpr_at_fpr(pos: list[float], neg: list[float], target: float) -> tuple[float, float]` (탐지율, 달성 오탐률)
+- `evaluate_real` 출력 : `name_signal` 추가, `malicious`·`precision_at_prevalence` 삭제, `precision_at` 삭제
+
+- [ ] **Step 1: 실패 테스트** — `auc` (완전 분리 1.0, 동일 0.5, 역전 0.0, 동점 0.5 처리), `tpr_at_fpr` (동점 묶음이 기준을 넘지 않음, 목표 오탐률 이하 보장),
+  `evaluate_real` 출력 키 `name_signal.typosquat.auc` 범위, `precision_at` 테스트 삭제.
+- [ ] **Step 2: 실패 확인** — `ImportError: cannot import name 'auc'`
+- [ ] **Step 3: 구현** — 스펙 8절 정의대로.
+- [ ] **Step 4: 통과 확인** — 전체 `pytest -q` PASS, ruff 통과.
+- [ ] **Step 5: Commit** — `feat(packages): 실측 평가를 이름 신호 지표(AUC·오탐률 고정 탐지율)로 교체`
+
+Task 4 Step 3 이후는 이 출력 기준으로 진행하며, 문서 표의 악성 행은 `name_signal` 지표로 바꾼다.
