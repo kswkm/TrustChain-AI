@@ -1,13 +1,13 @@
 {
- "collected_at": "2026-10-01T14:13:43.500047+00:00",
+ "collected_at": "2026-10-01T14:55:50.913280+00:00",
  "seed": 7,
  "osv": {
   "url": "https://osv-vulnerabilities.storage.googleapis.com/PyPI/all.zip",
   "sha256": "42bd88e9392c765d9c3ab3d6791247d82ede3a2911e6ea1ee85358f0d81f6316"
  },
  "malicious": {
-  "count": 11793,
-  "typosquat_count": 550
+  "count": 11768,
+  "typosquat_count": 543
  },
  "top": {
   "url": "https://hugovk.github.io/top-pypi-packages/top-pypi-packages-30-days.min.json",
@@ -20,16 +20,16 @@
  },
  "simple": {
   "url": "https://pypi.org/simple/",
-  "projects": 903493
+  "projects": 903503
  },
  "benign": {
   "rank": 1000,
   "random": 1000
  },
  "excluded": {
-  "malicious": 252,
-  "popular": 405,
-  "not_found": 35,
-  "yanked": 3
+  "malicious": 229,
+  "popular": 406,
+  "not_found": 18,
+  "yanked": 1
  }
 }

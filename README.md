@@ -121,8 +121,8 @@ Kubernetes 배포는 `kubectl apply -k deploy/k8s` ([deploy/k8s](deploy/k8s)).
 | AI 어시스턴트 검색 Recall@5 | 0.8 이상 | 하이브리드+리랭킹 **1.00**, MRR 0.862(BM25) → 0.896(RRF) → **0.912**(리랭킹) | `trustchain eval --offline-models` |
 
 - 분류 모델 평가셋은 인기 패키지 이름에 공개 보고된 위장 패턴을 적용하고 메타데이터를 전형적 분포에서 표본 추출해 만든 **합성 데이터**입니다.
-  실제 PyPI 데이터(OSV 악성 11,793건 · 정상 2,000개) 검증에서는 정상 패키지 실사용 오탐률 8.6%(차단 1.8%, Keras),
-  메타데이터 없는 이름 신호의 typosquatting 탐지는 AUC 0.567 · 오탐률 1% 에서 12% 로 제한적이었습니다 ([docs/evaluation.md](docs/evaluation.md) 1절).
+  실제 PyPI 데이터(OSV 악성 11,768건 · 정상 2,000개) 검증에서는 정상 패키지 실사용 오탐률 7.8%(차단 2.1%, Keras),
+  메타데이터 없는 이름 신호의 typosquat 탐지는 AUC 0.563 · 오탐률 1% 에서 12.9% 로 제한적이었습니다 ([docs/evaluation.md](docs/evaluation.md) 1절).
 - 패키지 판정 모델 : TensorFlow 가 설치된 환경(CI 게이트, `.[ml]`)은 TensorFlow(Keras) 모델로, 설치되지 않은 환경(가벼운 pre-commit)은
   같은 평가셋에서 위험 탐지 F1 0.995 · macro F1 0.950 인 경량 선형 모델로 판정합니다. CI 게이트는 `TRUSTCHAIN_PKG_MODEL=keras` 로 Keras 판정을 강제하며,
   판정 결과에는 판정 주체(분류 모델 이름, 또는 PyPI 에 없는 패키지처럼 모델 이전에 결론 난 경우 "규칙 (...)")가 표시됩니다.
