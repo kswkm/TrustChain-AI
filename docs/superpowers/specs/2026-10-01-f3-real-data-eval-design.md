@@ -35,9 +35,10 @@
 - **정상 표본** (seed 7)
   - `rank` 1,000개 : hugovk top-pypi-packages(30일) 순위 1,000~15,000위에서 무작위 추출.
   - `random` 1,000개 : PyPI Simple API(`https://pypi.org/simple/`, JSON) 전체 목록에서 무작위 추출.
-  - 제외 : OSV 악성 목록에 있는 이름, `popular_packages.txt` 의 409개, 존재하지 않음(`exists=False`), 조회 오류(`lookup_error`),
-    최신 버전 yanked. 제외되면 같은 원천에서 다음 후보를 뽑아 목표 개수를 채운다.
-- 메타데이터 조회는 기존 `PyPIClient`(캐시 HTTP)를 사용한다. 네트워크 오류는 중단하고, 재실행 시 캐시로 이어서 받는다.
+  - 제외 : OSV 악성 목록에 있는 이름, `popular_packages.txt` 의 409개, 존재하지 않음(`exists=False`), 최신 버전 yanked.
+    제외되면 같은 원천에서 다음 후보를 뽑아 목표 개수를 채운다.
+  - 조회 오류(`lookup_error`)는 제외하지 않고 수집을 중단한다 (네트워크 사정으로 표본이 치우치지 않도록).
+- 메타데이터 조회는 기존 `PyPIClient`(캐시 HTTP, 캐시 7일)를 사용한다. 재실행 시 캐시로 이어서 받는다.
 - **시점 고정** : 나이 특징(`young_package`)이 시간에 따라 변하지 않도록, 평가 시 `now = manifest.collected_at` 을 쓴다.
 
 ## 4. 평가 (`trustchain model eval-real`)
@@ -58,9 +59,9 @@
 ## 5. 코드 구성
 
 - 신규 `src/trustchain/packages/realeval.py`
-  - `load_osv_malicious(zip_path) -> list[dict]`
-  - `sample_benign(rank_names, all_names, exclude, client, n_rank, n_random, seed) -> (list[dict], dict 제외 건수)`
-  - `collect(out_dir, ...)` : 다운로드·표본·메타데이터 수집·스냅샷 저장
+  - `load_osv_malicious(zip_bytes) -> list[dict]`
+  - `sample_benign(candidates, targets, exclude, client, seed) -> (list[dict], dict 제외 건수)`
+  - `collect(out_dir, client, fetch, ...)` : 다운로드·표본·메타데이터 수집·스냅샷 저장 (`fetch` 주입으로 오프라인 테스트)
   - `evaluate_real(model, snapshot_dir) -> dict`
   - `precision_at(tpr, fpr, prevalence) -> float`
 - `PackageMeta` 직렬화/역직렬화(`to_json` / `from_json`, datetime 은 ISO 8601)를 `pypi.py` 에 추가.
@@ -70,7 +71,7 @@
 ## 6. 테스트 (모두 오프라인)
 
 - OSV 파싱 : 작은 픽스처 zip(일반 취약점 + `MAL-` 2건, 그중 1건 typosquatting 표기) → `MAL-` 만, 태그 정확.
-- 정상 표본 : 가짜 클라이언트로 제외 규칙(악성·인기·없음·조회 오류·yanked)과 목표 개수 보충, seed 재현성.
+- 정상 표본 : 가짜 클라이언트로 제외 규칙(악성·인기·없음·yanked)과 목표 개수 보충, 조회 오류 시 중단, seed 재현성.
 - `PackageMeta` 직렬화 왕복.
 - 지표 : `precision_at` 수식, 탐지율·오탐률 계산.
 - 종단 : 작은 스냅샷 픽스처 + 선형 모델로 `eval-real` 출력 키·값 범위 확인, 스냅샷 없음 → 종료 코드 2.
