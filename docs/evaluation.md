@@ -69,7 +69,11 @@ pip install .[ai] && trustchain eval --answers  # multilingual-e5-small + Cross-
 ## 4. 빌드 신뢰 수준 (목표 SLSA Build L3)
 
 `trustchain-ci.yml` 이 `slsa-framework/slsa-github-generator` 의 `generator_container_slsa3.yml@v2.1.0` 을 호출해 출처 증명을 생성합니다.
-Verify Gate 와 Kyverno 정책은 이 빌더 ID 로 만들어진 증명만 허용합니다. **GitHub 저장소에서 워크플로우를 실제로 실행한 결과는 아직 없습니다.**
+Verify Gate 와 Kyverno 정책은 이 빌더 ID 로 만들어진 증명만 허용합니다.
+
+**실행 결과** : 커밋 `c271b15` 의 [CI 실행](https://github.com/kswkm/TrustChain-AI/actions/runs/36807577616)에서 platform(`trustchain-platform`)·demo(`mnist-api`) 이미지 2종 모두
+이미지 빌드 → cosign keyless 서명·SBOM/AI-BOM 증명 첨부 → SLSA L3 출처 증명 생성(detect-env · generator · final) 잡이 성공했습니다.
+생성된 증명을 Verify Gate(`trustchain-cd.yml`)·Kyverno 로 검증하는 실측은 아직 하지 않았습니다.
 
 ## 5. 공급망 공격 시나리오 (목표 7종 전부 차단)
 
