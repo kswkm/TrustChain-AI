@@ -89,13 +89,16 @@ jobs:
           ref: ${{ inputs.trustchain-ref }}
           path: .trustchain-src
           persist-credentials: false
-      - name: TrustChain · Semgrep · Bandit 설치
+      - name: TrustChain · Semgrep · Bandit · TensorFlow 설치
         run: |
           python -m pip install --upgrade pip
-          pip install "$GITHUB_WORKSPACE/$TRUSTCHAIN_SRC" semgrep==1.101.0 bandit==1.8.0
+          # TensorFlow : 패키지 위험 판정을 Keras 분류 모델로 수행 (F3)
+          pip install "$GITHUB_WORKSPACE/$TRUSTCHAIN_SRC" semgrep==1.101.0 bandit==1.8.0 tensorflow-cpu==2.18.0
       - name: 보안 스캔 게이트
         id: gate
         working-directory: ${{ inputs.context }}
+        env:
+          TRUSTCHAIN_PKG_MODEL: keras  # 경량 선형 모델로 조용히 대체되지 않도록 강제
         run: |
           mkdir -p reports
           set +e

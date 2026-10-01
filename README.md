@@ -115,13 +115,16 @@ Kubernetes 배포는 `kubectl apply -k deploy/k8s` ([deploy/k8s](deploy/k8s)).
 | 지표 | 목표 | 결과 | 재현 |
 |---|---|---|---|
 | 공급망 공격 시나리오 차단 | 7종 전부 | **로컬 재현 5종 모두 차단**. 6·7번은 레지스트리·클러스터가 필요해 아직 실측하지 않음 | `python scenarios/run_all.py --offline` |
-| 타이포스쿼팅·환각 탐지 F1 | 0.9 이상 | 위험 탐지 F1 **0.995**, 3-클래스 macro F1 **0.950** (자체 구축 합성 평가셋, 576건) | `trustchain model eval` |
+| 타이포스쿼팅·환각 탐지 F1 | 0.9 이상 | TensorFlow(Keras) 분류 모델 위험 탐지 F1 **0.999**, 3-클래스 macro F1 **0.991** (자체 구축 합성 평가셋, 576건) | `trustchain model eval --out src/trustchain/data/package_model.keras` (TensorFlow 필요) |
 | SBOM 매칭 후 알림 | 1분 이내 | SBOM 수집 → OSV 매칭 → 알림까지 테스트에서 60초 미만을 확인 | `pytest tests/test_server_feed.py` |
 | 빌드 신뢰 수준 | SLSA Build L3 | slsa-github-generator 컨테이너 생성기 연동 워크플로우 작성. GitHub 에서는 아직 실행하지 않음 | `.github/workflows/trustchain-ci.yml` |
 | AI 어시스턴트 검색 Recall@5 | 0.8 이상 | 하이브리드+리랭킹 **1.00**, MRR 0.862(BM25) → 0.896(RRF) → **0.912**(리랭킹) | `trustchain eval --offline-models` |
 
 - 분류 모델 평가셋은 인기 패키지 이름에 공개 보고된 위장 패턴을 적용하고 메타데이터를 전형적 분포에서 표본 추출해 만든 **합성 데이터**입니다.
   실제 PyPI 분포에서의 성능은 실측 라벨 데이터로 따로 확인해야 합니다.
+- 패키지 판정 모델 : TensorFlow 가 설치된 환경(CI 게이트, `.[ml]`)은 TensorFlow(Keras) 모델로, 설치되지 않은 환경(가벼운 pre-commit)은
+  같은 평가셋에서 위험 탐지 F1 0.995 · macro F1 0.950 인 경량 선형 모델로 판정합니다. CI 게이트는 `TRUSTCHAIN_PKG_MODEL=keras` 로 Keras 판정을 강제하며,
+  판정 결과에 사용한 모델이 표시됩니다.
 - RAG 수치는 외부 모델 없이 측정한 기준선(해싱 임베딩, 어휘 리랭커, 평가셋 32문항)입니다. 다국어 임베딩 모델과 Cross-encoder 를 설치하면(`.[ai]`)
   같은 명령으로 다시 측정할 수 있습니다.
 
