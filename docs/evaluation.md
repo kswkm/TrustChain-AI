@@ -126,7 +126,11 @@ Kyverno `trustchain-verify-images` 정책도 이 이미지(`ghcr.io/kswkm/mnist-
 
 `python scenarios/run_all.py --offline --cluster --image <서명 없는 이미지@digest>` → **실행 7종 중 차단 7종**.
 
-- 1~5번 : 로컬 재현 (5번은 Trivy 샘플 리포트, `--image` 와 trivy 가 있으면 실제 스캔).
+- 1~4번 : 로컬 재현.
+- 5번 : `--vuln-image python:3.9-slim-buster@sha256:320a7a42…` 를 Trivy v0.75.0 으로 실제 스캔 → Debian 10.13(지원 종료) 에서 CRITICAL 2건
+  (CVE-2019-8457, CVE-2023-45853, 모두 패치 없음) + 지원 종료 OS 규칙(TC-IMG-006) 으로 차단. 패치 없는 취약점은 기본 정책(`ignore_unfixed`)상
+  차단 기준에서 빠지지만, 지원이 끝난 OS 는 앞으로도 패치가 나오지 않으므로 별도로 차단합니다. (실측 중 이 정책 공백을 발견해 보완)
+  `--vuln-image` 없이 오프라인으로 실행하면 샘플 Trivy 리포트로 판정합니다.
 - 6번 : CI 이미지에 레이어를 덧붙여 개발자 PC 에서 다시 빌드한 서명 없는 이미지(`ghcr.io/kswkm/mnist-api@sha256:bdd15eea…`)를 GHCR 에 직접 push →
   Verify Gate 가 cosign 서명·SLSA 출처 증명·SBOM·AI-BOM 증명 4개 항목 실패로 배포 차단 (종료 코드 1).
 - 7번 : kind(Kubernetes v1.37) + Kyverno v1.19.1 클러스터에 `deploy/k8s` 의 네임스페이스·정책을 적용하고 `kubectl run` 으로 직접 배포 →

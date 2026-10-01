@@ -15,14 +15,14 @@
 | ① 개발 | **F1** 시큐어코딩 점검 (KISA 가이드 기준 자체 룰 16종 + Semgrep·Bandit 연동) | [src/trustchain/secure_coding](src/trustchain/secure_coding) |
 | | **F2** 환각 패키지 탐지 (PyPI 존재·등록 시점, import ↔ 의존성 불일치) | [packages/checker.py](src/trustchain/packages/checker.py) |
 | | **F3** 타이포스쿼팅 탐지 (편집거리·키보드 인접·형태 유사 문자·n-gram 임베딩 + 분류 모델) | [packages/typosquat.py](src/trustchain/packages/typosquat.py), [classifier.py](src/trustchain/packages/classifier.py) |
-| | **F4** 의존성 신뢰 점수 0~100 (OSV·유지관리·관리자 수·OpenSSF Scorecard) | [packages/trust_score.py](src/trustchain/packages/trust_score.py) |
-| ② 빌드 | **F5** 보안 스캔 게이트 (코드·의존성·악성 pickle 모델·이미지·IaC) | [scan/](src/trustchain/scan) |
+| | **F4** 의존성 신뢰 점수 0~100 (OSV·유지관리(PyPI 배포 + GitHub REST API 저장소 활동)·관리자 수·OpenSSF Scorecard) | [packages/trust_score.py](src/trustchain/packages/trust_score.py) |
+| ② 빌드 | **F5** 보안 스캔 게이트 (코드·의존성(자체 OSV 조회 + pip-audit·OSV-Scanner)·악성 pickle 모델·이미지(Trivy, 지원 종료 OS 차단)·IaC) | [scan/](src/trustchain/scan) |
 | | **F6** SBOM(CycloneDX 1.6, Syft) + AI-BOM(모델·가중치 해시·데이터셋 출처) | [bom/](src/trustchain/bom) |
 | | **F7** SLSA Build L3 출처 증명 · cosign keyless 서명 | [.github/workflows/trustchain-ci.yml](.github/workflows/trustchain-ci.yml) |
 | ③ 배포 | **F8** Verify Gate (서명·인증서 클레임·SLSA·SBOM/AI-BOM 증명) | [attest/verify.py](src/trustchain/attest/verify.py), [trustchain-cd.yml](.github/workflows/trustchain-cd.yml) |
 | | **F9** Kyverno 실행 정책 · IaC 점검 (자체 룰 + Checkov) | [deploy/k8s/kyverno](deploy/k8s/kyverno), [iac/k8s.py](src/trustchain/iac/k8s.py) |
 | ④ 운영 | **F10** 취약점 피드 모니터 (OSV·NVD → SBOM 매칭 → Slack·메일) | [feed/](src/trustchain/feed) |
-| | **F11** AI 보안 어시스턴트 (Kiwi BM25 + 벡터 RRF 하이브리드 검색, 리랭킹, 근거 인용, PR 초안) | [assistant/](src/trustchain/assistant) |
+| | **F11** AI 보안 어시스턴트 (Kiwi + rank_bm25 키워드 검색 + 다국어 벡터 RRF 하이브리드 검색, Cross-encoder 리랭킹, 근거 인용, PR 초안) | [assistant/](src/trustchain/assistant) |
 | | **F12** 대시보드 · 알림 (Streamlit) | [dashboard/app.py](src/trustchain/dashboard/app.py) |
 
 ## 심사용 3분 재현
@@ -114,7 +114,7 @@ Kubernetes 배포는 `kubectl apply -k deploy/k8s` ([deploy/k8s](deploy/k8s)).
 
 | 지표 | 목표 | 결과 | 재현 |
 |---|---|---|---|
-| 공급망 공격 시나리오 차단 | 7종 전부 | **7종 모두 차단** (6번 GHCR 실제 레지스트리, 7번 kind + Kyverno 클러스터 실측. 5번은 샘플 Trivy 리포트) | `python scenarios/run_all.py --offline` (6·7번 : `--cluster --image <서명 없는 이미지@digest>`) |
+| 공급망 공격 시나리오 차단 | 7종 전부 | **7종 모두 차단** (5번 실제 Trivy 스캔, 6번 GHCR 실제 레지스트리, 7번 kind + Kyverno 클러스터 실측) | `python scenarios/run_all.py --offline` (5번 : `--vuln-image <이미지>`, 6·7번 : `--cluster --image <서명 없는 이미지@digest>`) |
 | 타이포스쿼팅·환각 탐지 F1 | 0.9 이상 | TensorFlow(Keras) 분류 모델 위험 탐지 F1 **0.999**, 3-클래스 macro F1 **0.991** (자체 구축 합성 평가셋, 576건) | `trustchain model eval --out src/trustchain/data/package_model.keras` (TensorFlow 필요) |
 | SBOM 매칭 후 알림 | 1분 이내 | SBOM 수집 → OSV 매칭 → 알림까지 테스트에서 60초 미만을 확인 | `pytest tests/test_server_feed.py` |
 | 빌드 신뢰 수준 | SLSA Build L3 | slsa-github-generator 컨테이너 생성기로 **GitHub Actions 에서 출처 증명 생성 성공** (platform·demo 이미지 2종, [CI 실행 기록](https://github.com/kswkm/TrustChain-AI/actions/runs/36807577616)), 생성된 이미지 2종 모두 **Verify Gate 검증 통과** (cosign 서명·서명 클레임·slsa-verifier·SBOM·AI-BOM 증명) | `.github/workflows/trustchain-ci.yml` |
@@ -135,13 +135,13 @@ Kubernetes 배포는 `kubectl apply -k deploy/k8s` ([deploy/k8s](deploy/k8s)).
 
 | 유형 | 적용 |
 |---|---|
-| 입력데이터 검증 | 모든 API 요청은 pydantic 스키마로 검증(`extra="forbid"`, 길이·패턴·범위 제한), 요청 본문 크기 제한, 검증 오류 응답에 입력값을 되돌려주지 않음 |
+| 입력데이터 검증 | 모든 API 요청은 pydantic 스키마로 검증(`extra="forbid"`, 길이·패턴·범위 제한), 요청 본문 크기 제한, 검증 오류 응답에 입력값을 되돌려주지 않음. SBOM 파일 업로드(`/api/v1/sboms/upload`)는 `.json` 만·기본 10MB 제한, 파일명은 경로 구분자 제거·허용 문자 정규화, 디스크에 저장하지 않고 CycloneDX 검증 |
 | SQL 삽입 | SQLAlchemy ORM·바인딩 파라미터만 사용 (pgvector 질의 벡터도 바인딩) |
 | 인증·권한 | API 토큰은 SHA-256 해시로만 저장, reader/ingest/admin 역할별 최소 권한, Actions 잡마다 `permissions` 명시 |
 | 중요정보 노출 | 비밀정보는 Secret/OIDC 로만 주입, 로그 마스킹 필터, 500 오류에는 요청 ID 만 반환 |
 | 역직렬화 | pickle 미사용 (모델 가중치·HTTP 캐시 모두 JSON / `.keras` safe_mode + 해시 검증) |
 | LLM 위협 | 검색 문서는 데이터 블록으로만 전달하고 태그 위장 문자열을 무력화, 인용 번호 검증, 코드 자동 실행 없음 |
-| 공급망 | 서드파티 Actions 커밋 SHA 고정, 베이스 이미지 digest 고정, 플랫폼 이미지에도 SBOM·서명·출처 증명 적용, CI 에서 자체 점검(dogfooding) |
+| 공급망 | 의존성 해시 고정(`requirements.lock`, `pip install --require-hashes`, 플랫폼·데모 이미지), 서드파티 Actions 커밋 SHA 고정, CI 도구 버전·바이너리 SHA-256 고정, 베이스 이미지 digest 고정, 플랫폼 이미지에도 SBOM·서명·출처 증명 적용, CI 에서 자체 점검(dogfooding) |
 
 ## 개발
 

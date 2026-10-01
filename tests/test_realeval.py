@@ -234,3 +234,11 @@ def test_cli_eval_real_prints_json(tmp_path, capsys):
     snap = make_snapshot(tmp_path)
     assert main(["model", "eval-real", "--data-dir", str(snap)]) == 0
     assert json.loads(capsys.readouterr().out)["name_signal"]["all"]["n_pos"] == 2
+
+
+def test_read_jsonl_keeps_unicode_line_separators(tmp_path):
+    from trustchain.packages.realeval import _read_jsonl, _write_jsonl
+
+    rows = [{"name": "a", "summary": "first second\x85third"}]
+    _write_jsonl(tmp_path / "x.jsonl", rows)
+    assert _read_jsonl(tmp_path / "x.jsonl") == rows

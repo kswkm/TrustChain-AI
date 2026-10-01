@@ -24,12 +24,12 @@
 |---|---|
 | `core/` | Finding·Report(SARIF), 설정(TOML), 마스킹 로거, 캐시·크기 제한 HTTP 클라이언트 |
 | `secure_coding/` | AST 기반 경량 오염 분석 룰(16종), Semgrep 룰(`semgrep_kisa.yml`), Bandit 결과 매핑 |
-| `packages/` | requirements/pyproject 파서, import 분석, PyPI·OSV·Scorecard 클라이언트, 타이포스쿼팅 특징, 분류 모델, 신뢰 점수, 통합 판정기 |
-| `scan/` | 모델 파일 정적 스캐너(pickle opcode, zip/PyTorch, Keras Lambda, npy, safetensors), Dockerfile·Trivy, 게이트 |
+| `packages/` | requirements/pyproject 파서, import 분석, PyPI·OSV·Scorecard·GitHub REST API 클라이언트, 타이포스쿼팅 특징, 분류 모델, 신뢰 점수, 통합 판정기, 실측 평가 |
+| `scan/` | 모델 파일 정적 스캐너(pickle opcode, zip/PyTorch, Keras Lambda, npy, safetensors), Dockerfile·Trivy(지원 종료 OS 차단), pip-audit·OSV-Scanner 연동(자체 OSV 결과와 별칭 기준 중복 제거), 게이트 |
 | `bom/` | CycloneDX 1.6 SBOM (Syft 또는 자체 생성), AI-BOM (machine-learning-model·data), 해시 대조 |
 | `attest/` | Verify Gate (cosign·slsa-verifier 실행, 인증서 클레임·in-toto statement 검증) |
 | `iac/` | Kubernetes 매니페스트 보안 룰, Checkov 연동 |
-| `server/` | SQLAlchemy 모델, 토큰 인증, pydantic 스키마, 수집 API |
+| `server/` | SQLAlchemy 모델, 토큰 인증, pydantic 스키마, 수집 API, SBOM 파일 업로드(형식·크기 제한, 파일명 정규화) |
 | `feed/` | OSV modified_id.csv 증분 수집, NVD 보강, SBOM 매칭, Slack·메일 알림 |
 | `assistant/` | 청킹, Kiwi/정규식 토크나이저, BM25, 임베딩, RRF, 리랭커, LLM, 프롬프트 분리, 우선순위, PR 초안, 평가 |
 | `dashboard/` | Streamlit 대시보드 (수집 API 만 호출, reader 토큰) |
@@ -43,7 +43,7 @@
 4. import 이름으로 선언(`sklearn`, `cv2`…) → 주의
 5. 이름 특징 6개 + 메타데이터 특징 6개 → 분류 모델 (정상/주의/차단) + 판정 근거(특징 기여도)
 6. 규칙 보정 : 등록 7일 미만 → 최소 주의, 등록 7일 미만 + 인기 패키지와 편집거리 2 이하 → 차단, 대문자 I 로 l 위장 → 차단
-7. OSV 취약점 + Scorecard → 신뢰 점수, 정책 하한 미달 시 주의
+7. OSV 취약점 + 유지관리(PyPI 배포·GitHub 저장소 활동) + Scorecard → 신뢰 점수, 정책 하한 미달 시 주의
 
 ### F5 게이트 정책
 `trustchain.toml` 의 `[gate]` (기본: CRITICAL 1건 이상 실패, 차단 패키지 1건 이상 실패). 결과는 JSON·SARIF 로 출력하고

@@ -151,7 +151,8 @@ def _write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
 
 
 def _read_jsonl(path: Path) -> list[dict[str, Any]]:
-    return [json.loads(x) for x in path.read_text(encoding="utf-8").splitlines() if x.strip()]
+    # splitlines() 는 U+2028 등도 줄바꿈으로 보므로 JSON 본문의 해당 문자에서 잘못 나뉜다 → '\n' 으로만 나눈다
+    return [json.loads(x) for x in path.read_text(encoding="utf-8").split("\n") if x.strip()]
 
 
 def collect(out_dir: Path, client: MetaSource, fetch: Callable[[str, dict[str, str]], bytes] = _download, *,

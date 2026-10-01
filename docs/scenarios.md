@@ -11,7 +11,7 @@ python scenarios/run_all.py                # 실제 PyPI·OSV 조회
 | 2 | 유명 패키지와 비슷한 위장 패키지 | `reqeusts==2.31.0` (자리바꿈, 최근 등록, 저장소 없음) | 개발 (F3) `TC-PKG-002` | ✅ |
 | 3 | SQL 삽입·하드코딩 비밀정보 커밋 | 문자열 결합 쿼리 + `DB_PASSWORD = "..."` | 개발 (F1) `TC-SQL-001`, `TC-SECRET-001` | ✅ |
 | 4 | 악성 pickle 모델로 교체 | AI-BOM 생성 후 `__reduce__` → `os.system` 모델로 교체 | 빌드 (F5) `TC-MODEL-001` + AI-BOM 해시 불일치 | ✅ |
-| 5 | 취약 OS 패키지 베이스 이미지 | Trivy 결과(오프라인은 샘플 리포트, `--image` 로 실제 스캔) | 빌드 (F5) CRITICAL 게이트 | ✅ (샘플 리포트) |
+| 5 | 취약 OS 패키지 베이스 이미지 | Trivy 결과(`--vuln-image` 로 실제 스캔, 없으면 샘플 리포트) | 빌드 (F5) CRITICAL 게이트 · 지원 종료 OS(TC-IMG-006) | ✅ (실제 Trivy 실측) |
 | 6 | 개발자 PC 에서 빌드한 서명 없는 이미지를 직접 push | 아래 절차 | 배포 (F8) Verify Gate | ✅ (GHCR 실측) |
 | 7 | 검증을 우회해 kubectl 로 직접 배포 | 아래 절차 | 배포 (F9) Kyverno | ✅ (kind 실측) |
 
