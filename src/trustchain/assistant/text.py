@@ -72,10 +72,20 @@ def tokenize(text: str) -> list[str]:
 
 
 class BM25:
-    """Okapi BM25 (k1=1.5, b=0.75)."""
+    """Okapi BM25 (k1=1.5, b=0.75). rank_bm25(BM25Okapi) 를 쓰고, 설치되지 않은 가벼운 환경에서만 같은 식의 자체 구현으로 대체한다."""
 
     def __init__(self, corpus_tokens: Sequence[Sequence[str]], k1: float = 1.5, b: float = 0.75):
         self.k1, self.b = k1, b
+        self._lib = None
+        self.backend = "builtin"
+        if corpus_tokens:
+            try:
+                from rank_bm25 import BM25Okapi
+            except ImportError:
+                pass
+            else:
+                self._lib = BM25Okapi([list(t) for t in corpus_tokens], k1=k1, b=b)
+                self.backend = "rank_bm25"
         self.docs = [Counter(t) for t in corpus_tokens]
         self.lens = [len(t) for t in corpus_tokens]
         self.avgdl = (sum(self.lens) / len(self.lens)) if self.lens else 0.0
@@ -86,6 +96,8 @@ class BM25:
         self.idf = {t: math.log(1 + (n - f + 0.5) / (f + 0.5)) for t, f in df.items()}
 
     def scores(self, query: Sequence[str]) -> list[float]:
+        if self._lib is not None:
+            return [float(x) for x in self._lib.get_scores(list(query))]
         out = []
         for d, dl in zip(self.docs, self.lens):
             s = 0.0

@@ -31,11 +31,14 @@ server = [
     "psycopg[binary]>=3.1",
     "pgvector>=0.2.5",
     "apscheduler>=3.10,<4",
+    "rank-bm25>=0.2.2",
+    "numpy>=1.26",
 ]
 ai = [
     "numpy>=1.26",
     "sentence-transformers>=2.7",
     "kiwipiepy>=0.17",
+    "rank-bm25>=0.2.2",
 ]
 ml = [
     "numpy>=1.26",
@@ -51,6 +54,7 @@ dev = [
     "fastapi>=0.110",
     "sqlalchemy>=2.0",
     "ruff>=0.4",
+    "rank-bm25>=0.2.2",
 ]
 
 [project.scripts]

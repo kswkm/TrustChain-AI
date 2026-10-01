@@ -30,6 +30,26 @@ def test_bm25_and_rrf():
     assert max(fused, key=fused.get) == 1
 
 
+def test_bm25_uses_rank_bm25_library():
+    pytest.importorskip("rank_bm25")
+    bm = BM25([["sql", "injection"], ["path", "traversal"], ["sql", "orm"]])
+    assert bm.backend == "rank_bm25"
+    s = bm.scores(["injection"])
+    assert s.index(max(s)) == 0 and len(s) == 3
+
+
+def test_bm25_falls_back_without_library(monkeypatch):
+    import sys
+
+    monkeypatch.setitem(sys.modules, "rank_bm25", None)
+    bm = BM25([["a", "b"], ["b", "c"], ["c"]])
+    assert bm.backend == "builtin" and bm.scores(["a"])[0] > 0
+
+
+def test_bm25_empty_corpus():
+    assert BM25([]).scores(["a"]) == []
+
+
 def test_chunk_osv_sections():
     v = {"id": "GHSA-x", "aliases": ["CVE-1"], "summary": "bad", "details": "long details",
          "affected": [{"package": {"ecosystem": "PyPI", "name": "p"},
