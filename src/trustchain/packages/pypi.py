@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field, fields
 from datetime import datetime, timezone
 from typing import Any, Protocol
 
@@ -43,6 +43,21 @@ class PackageMeta:
             return None
         now = now or datetime.now(timezone.utc)
         return (now - self.last_release).total_seconds() / 86400
+
+    def to_dict(self) -> dict[str, Any]:
+        d = asdict(self)
+        for k in ("first_release", "last_release"):
+            if d[k] is not None:
+                d[k] = d[k].isoformat()
+        return d
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> PackageMeta:
+        kw = {f.name: d[f.name] for f in fields(cls) if f.name in d}
+        for k in ("first_release", "last_release"):
+            if kw.get(k):
+                kw[k] = datetime.fromisoformat(kw[k])
+        return cls(**kw)
 
 
 class MetaSource(Protocol):
