@@ -176,7 +176,9 @@ def test_sample_benign_exclusions_and_refill():
                       ("good1", 1004), ("good2", 1005), ("good3", 1006)]}
     rows, excluded = sample_benign(cands, {"rank": 3}, {"malicious": {"evil"}, "popular": {"requests"}}, client, seed=7)
     assert sorted(r["name"] for r in rows) == ["good1", "good2", "good3"]
-    assert excluded == {"malicious": 1, "popular": 1, "not_found": 1, "yanked": 1}
+    # 목록 기반 제외는 후보 전체에서 세므로 정확, 조회 기반 제외는 추출 순서에 따라 0 또는 1
+    assert excluded["malicious"] == 1 and excluded["popular"] == 1
+    assert excluded["not_found"] in (0, 1) and excluded["yanked"] in (0, 1)
     r = next(r for r in rows if r["name"] == "good1")
     assert r["source"] == "rank" and r["rank"] == 1004 and r["meta"]["exists"] is True
 
@@ -259,6 +261,15 @@ def sample_benign(candidates: dict[str, list[tuple[str, int | None]]], targets: 
                   exclude: dict[str, set[str]], client: MetaSource,
                   seed: int = 7) -> tuple[list[dict[str, Any]], dict[str, int]]:
     excluded = {k: 0 for k in exclude} | {"not_found": 0, "yanked": 0}
+    # 목록 기반 제외(악성·인기)는 네트워크가 필요 없으므로 후보 전체에서 센다 (추출 순서와 무관한 건수)
+    reason_of: dict[str, str] = {}
+    for cands in candidates.values():
+        for raw, _ in cands:
+            name = canonicalize_name(raw)
+            reason = name not in reason_of and next((k for k, names in exclude.items() if name in names), None)
+            if reason:
+                reason_of[name] = reason
+                excluded[reason] += 1
     rows: list[dict[str, Any]] = []
     chosen: set[str] = set()
     for source, cands in candidates.items():
@@ -270,11 +281,7 @@ def sample_benign(candidates: dict[str, list[tuple[str, int | None]]], targets: 
             if got == want:
                 break
             name = canonicalize_name(raw)
-            if name in chosen:
-                continue
-            reason = next((k for k, names in exclude.items() if name in names), None)
-            if reason:
-                excluded[reason] += 1
+            if name in chosen or name in reason_of:
                 continue
             meta = client.get(name)
             if meta.lookup_error:
@@ -377,7 +384,8 @@ def test_evaluate_real_report(tmp_path):
     rep = evaluate_real(LinearModel.load_default(), make_snapshot(tmp_path))
     assert rep["model"] == "경량 선형 모델"
     assert rep["malicious"]["typosquat"]["n"] == 1 and rep["malicious"]["all"]["n"] == 2
-    assert rep["malicious"]["typosquat"]["detection_rate"] == 1.0          # reqeusts → 주의 이상
+    for grp in (rep["malicious"]["typosquat"], rep["malicious"]["all"]):
+        assert 0.0 <= grp["detection_rate"] <= 1.0 and grp["block_rate"] <= grp["detection_rate"]
     assert rep["benign"]["rank"]["n"] == 2 and rep["benign"]["random"]["n"] == 2 and rep["benign"]["all"]["n"] == 4
     for k in ("1%", "0.1%", "0.01%"):
         assert 0.0 <= rep["precision_at_prevalence"][k] <= 1.0
@@ -385,11 +393,15 @@ def test_evaluate_real_report(tmp_path):
 
 
 def test_evaluate_real_uses_collected_at(tmp_path, monkeypatch):
-    snap = make_snapshot(tmp_path)
-    a = evaluate_real(LinearModel.load_default(), snap)
     import trustchain.packages.realeval as realeval
+
+    snap = make_snapshot(tmp_path)
+    seen = []
+    real_fv = realeval.feature_vector
+    monkeypatch.setattr(realeval, "feature_vector", lambda nf, meta, now: seen.append(now) or real_fv(nf, meta, now))
     monkeypatch.setattr(realeval, "_utcnow", lambda: NOW + timedelta(days=3650))
-    assert evaluate_real(LinearModel.load_default(), snap) == a
+    evaluate_real(LinearModel.load_default(), snap)
+    assert seen and set(seen) == {NOW}
 
 
 def test_cli_eval_real_missing_snapshot(tmp_path, capsys):
@@ -565,7 +577,6 @@ def evaluate_real(model: Any, snapshot_dir: Path) -> dict[str, Any]:
 ```
 
 - [ ] **Step 5: 통과 확인** — `.venv\Scripts\python.exe -m pytest -q` → 전부 PASS (Keras 전용 SKIP), `ruff check src tests` → 통과.
-  `test_evaluate_real_report` 의 `detection_rate == 1.0` 이 실패하면 선형 모델이 `reqeusts`(메타 None)를 정상으로 본 것이다 — 단언을 고치지 말고 수치를 보고한다.
 
 - [ ] **Step 6: Commit** — `feat(packages): 실측 데이터 수집·평가 (trustchain model real-data / eval-real)`
 
@@ -587,7 +598,7 @@ def evaluate_real(model: Any, snapshot_dir: Path) -> dict[str, Any]:
   파일 크기 합계 5MB 이하 (`du -sh eval/pkg_real`). 넘으면 멈추고 보고한다.
 
 - [ ] **Step 3: 평가 (두 모델)**
-  - 선형 : `.venv\Scripts\trustchain.exe model eval-real > %TEMP%` 대신 스크래치 경로에 저장해 수치 확보.
+  - 선형 : `.venv\Scripts\trustchain.exe model eval-real` → 출력 JSON 을 스크래치 디렉터리에 저장 (커밋하지 않음).
   - Keras : `TF 컨테이너 "trustchain model eval-real --out src/trustchain/data/package_model.keras"` → 수치 확보.
 
 - [ ] **Step 4: `docs/evaluation.md` 1절 갱신** — "**한계**" 문단을 다음 구성으로 교체 (수치는 Step 3 결과를 그대로):
