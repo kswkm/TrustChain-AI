@@ -406,3 +406,9 @@ def test_pinned_hashes_match_platform_aibom():
     assert decl["intfloat/multilingual-e5-small"]["revision"] == EMBED_REVISION
     assert decl["cross-encoder/mmarco-mMiniLMv2-L12-H384-v1"]["sha256"] == RERANK_SHA256
     assert decl["cross-encoder/mmarco-mMiniLMv2-L12-H384-v1"]["revision"] == RERANK_REVISION
+
+
+def test_log_masking_personal_info():
+    s = mask("주민번호 900101-1234567 연락처 010-1234-5678 / 01098765432 키 AKIA" + "ABCDEFGHIJKLMNOP xoxb-1234567890-abcdef")
+    assert "900101-1234567" not in s and "010-1234-5678" not in s and "01098765432" not in s
+    assert "[RRN]" in s and s.count("[PHONE]") == 2 and "[AWS_KEY]" in s and "[SLACK_TOKEN]" in s

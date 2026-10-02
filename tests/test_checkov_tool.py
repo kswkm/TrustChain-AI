@@ -51,7 +51,7 @@ def test_run_checkov_status_and_excludes(tmp_path, monkeypatch):
     cmd = calls[0]
     assert cmd[cmd.index("--framework") + 1:cmd.index("--framework") + 4] == ["kubernetes", "terraform", "dockerfile"]
     skips = [cmd[i + 1] for i, a in enumerate(cmd) if a == "--skip-path"]
-    assert ".venv" in skips and "node_modules" in skips
+    assert any(r"\.venv" in x for x in skips) and any("node_modules" in x for x in skips)
     monkeypatch.setattr(k8s, "_run_tool", lambda cmd, timeout=300: "not json")
     assert k8s.run_checkov(tmp_path) == ([], "failed")
 
@@ -66,3 +66,16 @@ def test_gate_records_iac_scanner_status(tmp_path, monkeypatch):
     out = run_gate(Config(root=tmp_path), stages={"iac"}, external_tools=True)
     assert {"CKV_K8S_8", "CKV_AWS_24"} <= {f.rule_id for f in out.report.findings}
     assert out.report.meta["iac_scanners"] == {"checkov": "ok"}
+
+
+def test_checkov_skip_paths_are_anchored_directory_patterns(tmp_path, monkeypatch):
+    # --skip-path 는 정규식 : 'dist' 가 'distroless/Dockerfile' 까지 건너뛰지 않도록 디렉터리 이름 단위로 고정
+    import re
+
+    calls = []
+    monkeypatch.setattr(k8s.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(k8s, "_run_tool", lambda cmd, timeout=300: calls.append(cmd) or "[]")
+    k8s.run_checkov(tmp_path, exclude=["dist", ".venv"])
+    pats = [calls[0][i + 1] for i, a in enumerate(calls[0]) if a == "--skip-path"]
+    for pat, hit, miss in ((pats[0], "dist/app.yaml", "distroless/Dockerfile"), (pats[1], "a/.venv/x.tf", "a/xvenv/x.tf")):
+        assert re.search(pat, hit) and not re.search(pat, miss), pat

@@ -7,6 +7,7 @@ YAML 파서는 PyYAML(safe_load)을 쓰되, 없으면 JSON 매니페스트만 �
 from __future__ import annotations
 
 import json
+import re
 import shutil
 from pathlib import Path
 from typing import Any, Iterator
@@ -151,7 +152,8 @@ def run_checkov(root: Path, exclude: list[str] | None = None, timeout: int = 600
     cmd = ["checkov", "-d", str(root), "--framework", "kubernetes", "terraform", "dockerfile", "-o", "json", "--quiet",
            "--compact"]
     for ex in exclude or []:
-        cmd += ["--skip-path", ex]
+        # --skip-path 는 정규식이므로 디렉터리 이름 단위로 고정 ('dist' 가 'distroless/' 를 건너뛰지 않게)
+        cmd += ["--skip-path", rf"(^|/){re.escape(ex)}(/|$)"]
     try:
         data = json.loads(_run_tool(cmd, timeout=timeout) or "")
     except ValueError:
