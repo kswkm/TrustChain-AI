@@ -121,7 +121,20 @@ def merge_dependency_findings(existing: list[Finding], new: list[Finding]) -> li
 
 
 def _requirement_files(root: Path) -> list[Path]:
+    """스캔할 의존성 목록. 해시 고정본(requirements*.lock)이 있으면 실제 설치되는 그 목록만 쓴다.
+
+    직접 의존성만 있는 requirements.txt 를 주면 OSV-Scanner 가 전이 의존성 버전을 스스로 추정해
+    실제 설치본(lock)과 다른 버전의 취약점을 보고한다.
+    """
+    locks = sorted(root.glob("requirements*.lock")) + sorted(root.glob("requirements/*.lock"))
+    if locks:
+        return locks
     return sorted(root.glob("requirements*.txt")) + sorted(root.glob("requirements/*.txt"))
+
+
+def _osv_lockfile_arg(path: Path) -> str:
+    # .lock 확장자는 osv-scanner 가 형식을 알 수 없으므로 requirements.txt 형식임을 명시한다
+    return f"requirements.txt:{path}" if path.suffix == ".lock" else str(path)
 
 
 def _load_json(stdout: str | None) -> Any:
@@ -157,7 +170,7 @@ def run_osv_scanner(root: Path) -> tuple[list[Finding], str]:
         return [], "missing"
     cmd = ["osv-scanner", "scan", "source", "--format", "json"]
     for req in reqs:
-        cmd += ["-L", str(req)]
+        cmd += ["-L", _osv_lockfile_arg(req)]
     data = _load_json(_run_tool(cmd, timeout=600))
     if not isinstance(data, dict):
         return [], "failed"

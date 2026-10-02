@@ -157,3 +157,25 @@ def test_gate_runs_dependency_scanners_only_when_requested(cfg, fake_pypi, monke
     out = run_gate(cfg, stages={"packages"}, checker=PackageChecker(cfg, fake_pypi))       # 기본값 : 커밋 전 점검에선 실행 안 함
     assert "PYSEC-2018-28" not in {f.rule_id for f in out.report.findings}
     assert "dependency_scanners" not in out.report.meta
+
+
+def test_scanners_prefer_hash_lock_when_present(tmp_path, monkeypatch):
+    # requirements.txt 만 주면 OSV-Scanner 가 전이 의존성 버전을 추정해 실제 설치본과 다른 취약점을 낸다
+    # → 해시 고정본(requirements*.lock)이 있으면 실제 설치되는 그 목록을 스캔한다
+    import json
+
+    (tmp_path / "requirements.txt").write_text("fastapi==0.115.6\n", encoding="utf-8")
+    (tmp_path / "requirements.lock").write_text("fastapi==0.115.6 \\\n    --hash=sha256:00\n", encoding="utf-8")
+    calls = []
+
+    def fake_run(cmd, timeout=300):
+        calls.append(cmd)
+        return json.dumps({"results": []} if cmd[0] == "osv-scanner" else {"dependencies": []})
+
+    monkeypatch.setattr(deps.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(deps, "_run_tool", fake_run)
+    assert deps.run_osv_scanner(tmp_path)[1] == "ok" and deps.run_pip_audit(tmp_path)[1] == "ok"
+    osv_cmd, audit_cmd = calls
+    assert osv_cmd[osv_cmd.index("-L") + 1] == "requirements.txt:" + str(tmp_path / "requirements.lock")
+    assert audit_cmd[audit_cmd.index("-r") + 1] == str(tmp_path / "requirements.lock")
+    assert not any(a.endswith("requirements.txt") and ":" not in a for a in osv_cmd + audit_cmd)
