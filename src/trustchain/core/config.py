@@ -27,6 +27,8 @@ class GatePolicy:
     min_trust_score: int = 0
     # 이미지 스캔에서 배포판이 패치를 내지 않은(FixedVersion 없음) 취약점은 보고만 하고 게이트 판정에서 제외
     ignore_unfixed: bool = True
+    # 심각도 한도를 적용할 발견 분류 (code·package·dependency·model·image·iac). 비우면 전부
+    categories: list[str] = field(default_factory=list)
 
     def violations(self, counts: dict[str, int]) -> list[str]:
         out = []
@@ -60,7 +62,8 @@ class Config:
     gate: GatePolicy = field(default_factory=GatePolicy)
     # 커밋 시점(trustchain check · pre-commit/pre-push) 기준 : 취약 코드(HIGH 이상)를 개발 단계에서 차단한다.
     # trustchain.toml 의 [check] 로 완화할 수 있다. 빌드 게이트([gate])와 별개
-    check: GatePolicy = field(default_factory=lambda: GatePolicy(max_high=0))
+    # 커밋 시점은 작성 중인 코드(code)와 패키지 판정(package)만 센다. 의존성 권고문은 빌드 게이트가 판정
+    check: GatePolicy = field(default_factory=lambda: GatePolicy(max_high=0, categories=["code", "package"]))
     provenance: ProvenancePolicy = field(default_factory=ProvenancePolicy)
     disabled_rules: list[str] = field(default_factory=list)
     allow_packages: list[str] = field(default_factory=list)  # 사내 패키지 등 판정 예외

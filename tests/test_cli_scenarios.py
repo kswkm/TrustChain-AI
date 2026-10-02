@@ -129,3 +129,28 @@ def test_scenario3_uses_real_commit_policy():
     src = (ROOT / "scenarios" / "run_all.py").read_text(encoding="utf-8")
     body = src[src.index("def s3("):src.index("def s4(")]
     assert "commit_policy(" in body and "max_high = 0" not in body
+
+
+def test_commit_policy_keeps_other_gate_settings(tmp_path):
+    # [check] 는 심각도 한도만 바꾼다 : [gate] 의 신뢰 점수 하한·패키지 차단 같은 설정은 커밋 시점에도 그대로
+    from trustchain.core.config import load_config
+    from trustchain.scan.gate import commit_policy
+
+    (tmp_path / "trustchain.toml").write_text("[gate]\nmin_trust_score = 60\nignore_unfixed = false\n", encoding="utf-8")
+    c = commit_policy(load_config(tmp_path))
+    assert c.gate.min_trust_score == 60 and c.gate.ignore_unfixed is False and c.gate.max_high == 0
+
+
+def test_commit_check_does_not_block_on_dependency_advisories(cfg):
+    # 커밋 시점 HIGH 차단은 작성 중인 코드(code)와 패키지 판정(package)에만 적용 : 의존성 권고문(dependency)은 빌드 게이트가 차단
+    from trustchain.core.findings import Finding, Report, Severity
+    from trustchain.scan.gate import commit_policy, evaluate
+
+    c = commit_policy(cfg)
+    dep = Finding("GHSA-x", "취약한 의존성", Severity.HIGH, "m", category="dependency")
+    code = Finding("TC-SQL-001", "SQL 삽입", Severity.HIGH, "m", category="code")
+    assert evaluate(c, Report([dep]), []) == []
+    assert evaluate(c, Report([code]), []) != []
+    assert evaluate(cfg, Report([dep]), []) == []                       # 빌드 게이트 기본(CRITICAL) 도 HIGH 허용
+    crit = Finding("GHSA-y", "취약한 의존성", Severity.CRITICAL, "m", category="dependency")
+    assert evaluate(cfg, Report([crit]), []) != [] and evaluate(c, Report([crit]), []) == []

@@ -48,12 +48,19 @@ def make_checker(cfg: Config, with_scorecard: bool = True) -> PackageChecker:
 
 
 def commit_policy(cfg: Config) -> Config:
-    """커밋 시점 점검용 설정 : [check] 정책을 게이트 정책으로 쓴 사본 (원래 설정은 바꾸지 않음)."""
-    return replace(cfg, gate=replace(cfg.check))
+    """커밋 시점 점검용 설정 사본 : [gate] 를 바탕으로 [check] 의 심각도 한도·분류만 바꾼다 (원래 설정은 바꾸지 않음).
+
+    신뢰 점수 하한·패키지 차단 같은 [gate] 의 다른 설정은 커밋 시점에도 그대로 적용된다.
+    """
+    ck = cfg.check
+    gate = replace(cfg.gate, max_critical=ck.max_critical, max_high=ck.max_high, max_medium=ck.max_medium,
+                   categories=list(ck.categories))
+    return replace(cfg, gate=gate)
 
 
 def evaluate(cfg: Config, report: Report, verdicts: list[PackageVerdict]) -> list[str]:
-    counted = [f for f in report.findings if not (cfg.gate.ignore_unfixed and f.extra.get("unfixed"))]
+    counted = [f for f in report.findings if not (cfg.gate.ignore_unfixed and f.extra.get("unfixed"))
+               and (not cfg.gate.categories or f.category in cfg.gate.categories)]
     violations = cfg.gate.violations(Report(counted).counts())
     if cfg.gate.block_on_package_verdict:
         blocked = [v.raw_name for v in verdicts if v.verdict == "차단"]
