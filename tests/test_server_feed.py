@@ -264,3 +264,139 @@ def test_cpe_version_range():
     assert cpe_affects(exact, "xz", "5.6.0") and not cpe_affects(exact, "xz", "5.6.2")
     assert cpe_affects({"criteria": "cpe:2.3:a:x:python_dateutil:*:*:*:*:*:*:*:*", "versionEndIncluding": "2.8"},
                        "python-dateutil", "2.8")
+
+
+
+class PagedNVD(NoNetHTTP):
+    """페이지당 1건씩 total 건을 돌려주는 NVD (startIndex 로 위치 결정)."""
+
+    def __init__(self, total=3, broken_at=None):
+        self.total, self.broken_at, self.urls = total, broken_at, []
+
+    def get_json(self, url, **kw):
+        self.urls.append(url)
+        if "lastModStartDate" not in url:
+            return super().get_json(url, **kw)
+        idx = int(url.rsplit("startIndex=", 1)[1])
+        if self.broken_at is not None and idx == self.broken_at:
+            return ["not", "a", "dict"]
+        return {"totalResults": self.total, "vulnerabilities": [_nvd_item(f"CVE-2099-90{idx:02d}", "zzz-none", "1.0")]}
+
+
+def _feed_state(mon, key):
+    from trustchain.feed.monitor import _get_state
+
+    with mon.sf() as s:
+        return _get_state(s, key)
+
+
+def test_nvd_page_limit_resumes_without_skipping(env):
+    from trustchain.feed.monitor import MonitorStats
+
+    _, _, _, mon = env
+    mon.http = PagedNVD(total=3)
+    mon._sleep = lambda sec: None
+    with mon.sf() as s:
+        mon.collect_nvd(s, MonitorStats(), max_pages=2)
+        s.commit()
+    assert not _feed_state(mon, "nvd:since")                    # 창을 다 받지 못했으면 기준 시각을 옮기지 않는다
+    with mon.sf() as s:
+        mon.collect_nvd(s, MonitorStats(), max_pages=2)
+        s.commit()
+    starts = [int(u.rsplit("startIndex=", 1)[1]) for u in mon.http.urls if "lastModStartDate" in u]
+    assert starts == [0, 1, 2]                                  # 두 번째 실행은 이어서 받는다 (같은 창)
+    assert _feed_state(mon, "nvd:since")
+
+
+def test_nvd_non_dict_response_does_not_advance(env):
+    from trustchain.feed.monitor import MonitorStats
+
+    _, _, _, mon = env
+    mon.http = PagedNVD(total=3, broken_at=1)
+    mon._sleep = lambda sec: None
+    with mon.sf() as s:
+        mon.collect_nvd(s, MonitorStats())
+        s.commit()
+    assert not _feed_state(mon, "nvd:since")
+
+
+def test_nvd_waits_between_pages_without_api_key(env):
+    from trustchain.feed.monitor import MonitorStats
+
+    _, _, _, mon = env
+    waits = []
+    mon.http, mon._sleep, mon.nvd_key = PagedNVD(total=3), waits.append, None
+    with mon.sf() as s:
+        mon.collect_nvd(s, MonitorStats())
+    assert waits and all(w >= 6 for w in waits) and len(waits) == 2     # 키 없음 : 30초 5회 제한 → 페이지 사이 대기
+    waits.clear()
+    mon.http, mon.nvd_key = PagedNVD(total=3), "k"
+    with mon.sf() as s:
+        mon.collect_nvd(s, MonitorStats(), now=datetime_now_plus(1))
+    assert all(w < 6 for w in waits)
+
+
+def datetime_now_plus(hours):
+    from datetime import datetime, timedelta, timezone
+
+    return datetime.now(timezone.utc) + timedelta(hours=hours)
+
+
+def test_cpe_target_software_must_match_component_ecosystem():
+    from trustchain.feed.monitor import cpe_affects
+
+    wp = {"criteria": "cpe:2.3:a:someauthor:chart:*:*:*:*:*:wordpress:*:*", "versionEndIncluding": "3.2.1"}
+    assert not cpe_affects(wp, "chart", "2.0.0", "npm")         # WordPress 플러그인 CVE 가 npm 패키지에 알림 X
+    py = {"criteria": "cpe:2.3:a:psf:requests:*:*:*:*:*:python:*:*", "versionEndExcluding": "2.31.0"}
+    assert cpe_affects(py, "requests", "2.30.0", "PyPI") and not cpe_affects(py, "requests", "2.30.0", "npm")
+    generic = {"criteria": "cpe:2.3:a:tukaani:xz:5.6.0:*:*:*:*:*:*:*"}
+    assert cpe_affects(generic, "xz", "5.6.0", "Debian")         # 대상 플랫폼 미지정(OS 패키지 등)은 제품명·버전으로
+    assert cpe_affects({"criteria": "cpe:2.3:a:x:lib:2.0:*:*:*:*:*:*:*"}, "lib", "2.0.0", "PyPI")   # 2.0 == 2.0.0
+
+
+def test_nvd_then_osv_same_cve_alerts_once(env):
+    client, tok, notifier, mon = env
+    client.post("/api/v1/sboms", json={"service": "svc", "digest": DIGEST, "sbom": SBOM}, headers=H(tok["ingest"]))
+    before = len(notifier.sent)
+    item = _nvd_item("CVE-2020-14343", "pyyaml", "5.4")
+    item["cve"]["configurations"][0]["nodes"][0]["cpeMatch"][0]["criteria"] = "cpe:2.3:a:pyyaml:pyyaml:*:*:*:*:*:python:*:*"
+    with mon.sf() as s:
+        s.query(__import__("trustchain.server.db", fromlist=["Alert"]).Alert).delete()
+        s.query(__import__("trustchain.server.db", fromlist=["Vulnerability"]).Vulnerability).delete()
+        s.commit()
+        mon.process_nvd(s, item)                                   # NVD 가 먼저 발표
+        mon.process_vuln(s, VULN)                                  # 나중에 OSV(PYSEC, 별칭 CVE-2020-14343)
+        s.commit()
+        from trustchain.server.db import Alert
+
+        alerts = s.query(Alert).filter(Alert.component == "pyyaml").all()
+    assert len(alerts) == 1, [a.vuln_id for a in alerts]
+    assert len(notifier.sent) - before == 1
+
+
+def test_nvd_never_overwrites_osv_row(env):
+    from trustchain.server.db import Vulnerability
+
+    _, _, _, mon = env
+    with mon.sf() as s:
+        s.add(Vulnerability(id="CVE-2099-7777", summary="osv summary", aliases=["GHSA-aaaa"], raw={"id": "CVE-2099-7777"}))
+        s.commit()
+        mon.process_nvd(s, _nvd_item("CVE-2099-7777", "requests", "9.0"))
+        s.commit()
+        row = s.get(Vulnerability, "CVE-2099-7777")
+        assert row.aliases == ["GHSA-aaaa"] and row.summary == "osv summary"
+
+
+def test_nvd_fixed_versions_from_matched_range_only(env):
+    client, tok, notifier, mon = env
+    client.post("/api/v1/sboms", json={"service": "svc2", "digest": "sha256:" + "b" * 64, "sbom": SBOM},
+                headers=H(tok["ingest"]))
+    item = _nvd_item("CVE-2099-3333", "requests", "2.32.0")
+    item["cve"]["configurations"][0]["nodes"][0]["cpeMatch"].append(
+        {"vulnerable": True, "criteria": "cpe:2.3:a:vendor:requests:*:*:*:*:*:*:*:*",
+         "versionStartIncluding": "1.0", "versionEndExcluding": "1.5"})
+    with mon.sf() as s:
+        mon.process_nvd(s, item)
+        s.commit()
+    msg = next(m for m in notifier.sent if m.vuln_id == "CVE-2099-3333")
+    assert msg.fixed == ["2.32.0"]
