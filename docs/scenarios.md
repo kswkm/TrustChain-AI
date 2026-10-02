@@ -32,7 +32,7 @@ python scenarios/run_all.py --image ghcr.io/<owner>/mnist-api@$DIGEST --repo git
 
 ## 시나리오 7 : kubectl 직접 배포
 
-실측 환경 : kind v0.33.0 (Kubernetes v1.37) + Kyverno v1.19.1. 결과는 [evaluation.md](evaluation.md) 5절.
+실측 환경 : kind v0.33.0 (Kubernetes v1.37) + Kyverno v1.19.1, 정책은 CEL 기반 `ImageValidatingPolicy`·`ValidatingPolicy` (`policies.kyverno.io/v1`). 결과는 [evaluation.md](evaluation.md) 5절.
 
 ```bash
 # 로컬 kind 클러스터로 재현 (실측에 사용한 절차)
@@ -51,6 +51,6 @@ helm install kyverno kyverno/kyverno -n kyverno --create-namespace
 kubectl apply -k deploy/k8s
 
 python scenarios/run_all.py --cluster --image ghcr.io/<owner>/mnist-api@$DIGEST
-# 기대 결과: admission webhook "mutate.kyverno.svc-fail" denied the request:
+# 기대 결과: admission webhook "ivpol.validate.kyverno.svc-fail-finegrained-trustchain-verify-images" denied the request:
 #           policy trustchain-verify-images ... no matching signatures
 ```

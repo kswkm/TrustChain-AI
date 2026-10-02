@@ -1,65 +1,73 @@
 # F9. Kyverno Admission Control : 서명·SLSA 출처 증명·SBOM 증명이 없는 이미지의 Pod 생성을 거부한다.
 # CD 의 Verify Gate 를 우회해 kubectl 로 직접 배포해도 이 정책에서 차단된다 (시나리오 7).
-apiVersion: kyverno.io/v1
-kind: ClusterPolicy
+# Kyverno 1.16+ CEL 기반 ImageValidatingPolicy (kyverno.io/v1 ClusterPolicy 의 verifyImages 대체)
+apiVersion: policies.kyverno.io/v1
+kind: ImageValidatingPolicy
 metadata:
   name: trustchain-verify-images
   annotations:
     policies.kyverno.io/title: TrustChain 이미지 서명·출처 검증
     policies.kyverno.io/severity: high
 spec:
-  validationFailureAction: Enforce
-  webhookTimeoutSeconds: 30
-  background: false
-  rules:
-    - name: verify-signature-provenance-sbom
-      match:
-        any:
-          - resources:
-              kinds: [Pod]
-              namespaceSelector:
-                matchLabels:
-                  trustchain.dev/verify-images: "true"
-      verifyImages:
-        - imageReferences:
-            - "ghcr.io/kswkm/*"
-          mutateDigest: true # 태그로 요청해도 검증된 digest 로 고정
-          verifyDigest: true
-          required: true
-          attestors:
-            - entries:
-                - keyless:
-                    # 서명 주체 = TrustChain 재사용 CI 워크플로우, main 브랜치 또는 릴리스 태그
-                    subjectRegExp: "^https://github\\.com/kswkm/TrustChain-AI/\\.github/workflows/trustchain-ci\\.yml@refs/(heads/main|tags/v.+)$"
-                    issuer: "https://token.actions.githubusercontent.com"
-                    rekor:
-                      url: https://rekor.sigstore.dev
-          attestations:
-            # SLSA Build L3 : slsa-github-generator 컨테이너 생성기가 만든 출처 증명
-            - type: https://slsa.dev/provenance/v0.2
-              attestors:
-                - entries:
-                    - keyless:
-                        subjectRegExp: "^https://github\\.com/slsa-framework/slsa-github-generator/\\.github/workflows/generator_container_slsa3\\.yml@refs/tags/v[0-9].*$"
-                        issuer: "https://token.actions.githubusercontent.com"
-                        rekor:
-                          url: https://rekor.sigstore.dev
-              conditions:
-                - all:
-                    - key: "{{ invocation.configSource.uri }}"
-                      operator: Equals
-                      value: "git+https://github.com/kswkm/TrustChain-AI@refs/heads/main"
-            # CycloneDX SBOM 증명
-            - type: https://cyclonedx.org/bom
-              attestors:
-                - entries:
-                    - keyless:
-                        subjectRegExp: "^https://github\\.com/kswkm/TrustChain-AI/\\.github/workflows/trustchain-ci\\.yml@refs/(heads/main|tags/v.+)$"
-                        issuer: "https://token.actions.githubusercontent.com"
-                        rekor:
-                          url: https://rekor.sigstore.dev
-              conditions:
-                - all:
-                    - key: "{{ length(components) }}"
-                      operator: GreaterThan
-                      value: 0
+  validationActions: [Deny]
+  webhookConfiguration:
+    timeoutSeconds: 30
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [pods]
+    namespaceSelector:
+      matchLabels:
+        trustchain.dev/verify-images: "true"
+  matchImageReferences:
+    - glob: "ghcr.io/kswkm/*"
+  validationConfigurations:
+    mutateDigest: true # 태그로 요청해도 검증된 digest 로 고정
+    verifyDigest: true
+    required: true
+  attestors:
+    # 서명 주체 = TrustChain 재사용 CI 워크플로우, main 브랜치 또는 릴리스 태그
+    - name: ci
+      cosign:
+        keyless:
+          identities:
+            - subjectRegExp: "^https://github\\.com/kswkm/TrustChain-AI/\\.github/workflows/trustchain-ci\\.yml@refs/(heads/main|tags/v.+)$"
+              issuer: "https://token.actions.githubusercontent.com"
+        ctlog:
+          url: https://rekor.sigstore.dev
+    # SLSA Build L3 : slsa-github-generator 컨테이너 생성기
+    - name: slsa
+      cosign:
+        keyless:
+          identities:
+            - subjectRegExp: "^https://github\\.com/slsa-framework/slsa-github-generator/\\.github/workflows/generator_container_slsa3\\.yml@refs/tags/v[0-9].*$"
+              issuer: "https://token.actions.githubusercontent.com"
+        ctlog:
+          url: https://rekor.sigstore.dev
+  attestations:
+    - name: provenance
+      intoto:
+        type: https://slsa.dev/provenance/v0.2
+    - name: sbom
+      intoto:
+        type: https://cyclonedx.org/bom
+  validations:
+    - expression: >-
+        images.containers.map(image, verifyImageSignatures(image, [attestors.ci])).all(n, n > 0)
+      message: "CI 워크플로우의 cosign 서명이 없습니다"
+    - expression: >-
+        images.containers.map(image, verifyAttestationSignatures(image, attestations.provenance, [attestors.slsa])).all(n, n > 0)
+      message: "SLSA Build L3 출처 증명이 없습니다"
+    - expression: >-
+        images.containers.map(image, extractPayload(image, attestations.provenance).predicate.invocation.configSource.uri
+        == "git+https://github.com/kswkm/TrustChain-AI@refs/heads/main").all(ok, ok)
+      message: "출처 증명의 소스 저장소·브랜치가 일치하지 않습니다"
+    - expression: >-
+        images.containers.map(image, verifyAttestationSignatures(image, attestations.sbom, [attestors.ci])).all(n, n > 0)
+      message: "CycloneDX SBOM 증명이 없습니다"
+    - expression: >-
+        images.containers.map(image, size(extractPayload(image, attestations.sbom).predicate.components) > 0).all(ok, ok)
+      message: "SBOM 증명에 구성요소가 없습니다"

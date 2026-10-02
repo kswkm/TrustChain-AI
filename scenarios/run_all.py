@@ -170,9 +170,22 @@ def s7(cluster: bool, image: str | None) -> Result:
     if not cluster or not image or not shutil.which("kubectl"):
         return Result(7, "kubectl 직접 배포 우회", "배포 단계 (F9)", None,
                       "건너뜀: --cluster --image 와 Kyverno 설치 클러스터 필요 (docs/scenarios.md)")
-    r = subprocess.run(["kubectl", "-n", "app", "run", "bypass-test", f"--image={image}", "--restart=Never"],
-                       capture_output=True, text=True, check=False)
-    blocked = r.returncode != 0 and ("trustchain-verify-images" in r.stderr or "admission webhook" in r.stderr)
+    # 보안 설정(PodSecurity restricted·워크로드 정책)을 모두 지킨 Pod 로 제출한다. 그래야 거부 이유가 서명·출처 정책뿐임을 보일 수 있다
+    manifest = f"""apiVersion: v1
+kind: Pod
+metadata: {{name: bypass-test, namespace: app}}
+spec:
+  restartPolicy: Never
+  securityContext: {{runAsNonRoot: true, runAsUser: 10001, seccompProfile: {{type: RuntimeDefault}}}}
+  containers:
+    - name: app
+      image: {image}
+      securityContext: {{allowPrivilegeEscalation: false, capabilities: {{drop: [ALL]}}}}
+      resources: {{limits: {{memory: 256Mi, cpu: 250m}}}}
+"""
+    r = subprocess.run(["kubectl", "apply", "-f", "-"], input=manifest, capture_output=True, text=True,
+                       encoding="utf-8", errors="replace", check=False)
+    blocked = r.returncode != 0 and "trustchain-verify-images" in r.stderr
     return Result(7, "kubectl 직접 배포 우회", "배포 단계 (F9)", blocked, (r.stderr or r.stdout).strip()[:160])
 
 

@@ -174,8 +174,11 @@ Kyverno `trustchain-verify-images` 정책도 이 이미지(`ghcr.io/kswkm/mnist-
   `--vuln-image` 없이 오프라인으로 실행하면 샘플 Trivy 리포트로 판정합니다.
 - 6번 : CI 이미지에 레이어를 덧붙여 개발자 PC 에서 다시 빌드한 서명 없는 이미지(`ghcr.io/kswkm/mnist-api@sha256:bdd15eea…`)를 GHCR 에 직접 push →
   Verify Gate 가 cosign 서명·SLSA 출처 증명·SBOM·AI-BOM 증명 4개 항목 실패로 배포 차단 (종료 코드 1).
-- 7번 : kind(Kubernetes v1.37) + Kyverno v1.19.1 클러스터에 `deploy/k8s` 의 네임스페이스·정책을 적용하고 `kubectl run` 으로 직접 배포 →
-  `admission webhook "mutate.kyverno.svc-fail" denied the request ... trustchain-verify-images ... no signatures found`.
+- 7번 : kind(Kubernetes v1.37) + Kyverno v1.19.1 클러스터에 `deploy/k8s` 의 네임스페이스·정책(CEL 기반 `ImageValidatingPolicy`·
+  `ValidatingPolicy`)을 적용하고, PodSecurity restricted·워크로드 정책을 모두 지킨 Pod 를 서명 없는 이미지로 `kubectl apply` →
+  `admission webhook "ivpol.validate.kyverno.svc-fail-finegrained-trustchain-verify-images" denied the request ... CI 워크플로우의 cosign 서명이 없습니다`.
+  보안 설정을 모두 지킨 Pod 로 제출하므로 차단 원인은 서명·출처 정책뿐입니다 (2026-10-02 재실측, 5·6·7번을 한 번에 실행해 7종 모두 차단).
+- 워크로드 정책 : 같은 클러스터에서 digest 없는 태그 이미지와 메모리 limit 누락 Pod 를 `trustchain-workload-hardening` 이 거부함을 확인했습니다.
 - 대조 : 같은 보안 설정의 Pod 명세에서 이미지만 CI 서명 이미지(`ghcr.io/kswkm/mnist-api@sha256:972f1e92…`)로 바꾸면 Kyverno 가 허용합니다.
   즉 차단 원인은 서명·증명 유무이며, 정책이 모든 이미지를 막는 것이 아닙니다.
 

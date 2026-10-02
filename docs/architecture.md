@@ -5,7 +5,7 @@
 ```
 개발자 PC                         GitHub                                   클라우드 (Kubernetes)
 ┌──────────────┐  commit  ┌───────────────────────────────┐        ┌──────────────────────────────────┐
-│ IDE·AI 코딩  │────────▶│ trustchain-ci.yml (재사용)     │        │ Kyverno (verifyImages)            │
+│ IDE·AI 코딩  │────────▶│ trustchain-ci.yml (재사용)     │        │ Kyverno (ImageValidatingPolicy)   │
 │ trustchain   │          │  ① gate: 코드·의존성·모델·IaC │        │  서명·SLSA·SBOM 증명 없으면 거부   │
 │  check (F1~4)│  push    │  ② build → GHCR (digest)       │ deploy │        │                          │
 │ pre-commit   │────────▶│  ③ Trivy 이미지 게이트         │───────▶│ app ns: mnist-api (digest 고정)   │

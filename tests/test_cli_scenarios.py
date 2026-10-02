@@ -54,3 +54,40 @@ def test_scenario5_lists_unique_cves(tmp_path):
     spec.loader.exec_module(mod)
     r = mod.s5(tmp_path, True, None)
     assert r.blocked is True and r.evidence.count("CVE-2024-3094") == 1
+
+
+def _load_run_all():
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("run_all", ROOT / "scenarios" / "run_all.py")
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules["run_all"] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def test_scenario7_submits_hardened_pod_and_requires_signature_policy(monkeypatch):
+    # 보안 설정을 모두 지킨 Pod 로 제출해, 차단 이유가 PodSecurity 가 아니라 서명 정책(trustchain-verify-images)임을 확인한다
+    import subprocess as sp
+
+    mod = _load_run_all()
+    calls = []
+
+    def fake_run(cmd, input=None, **kw):
+        calls.append((cmd, input))
+        # 정책 메시지(한국어 UTF-8)를 Windows 기본 인코딩(cp949)으로 읽으면 깨지므로 UTF-8 로 명시해야 한다
+        assert kw.get("encoding") == "utf-8"
+        return sp.CompletedProcess(cmd, 1, "", fake_run.stderr)
+
+    monkeypatch.setattr(mod.shutil, "which", lambda name: "/usr/bin/kubectl")
+    monkeypatch.setattr(mod.subprocess, "run", fake_run)
+    img = "ghcr.io/o/app@sha256:" + "b" * 64
+    fake_run.stderr = 'admission webhook "ivpol.validate.kyverno.svc" denied: Policy trustchain-verify-images failed'
+    r = mod.s7(True, img)
+    cmd, manifest = calls[0]
+    assert cmd[:2] == ["kubectl", "apply"] and "-f" in cmd
+    for needle in (img, "allowPrivilegeEscalation: false", "runAsNonRoot: true", "memory:", "RuntimeDefault"):
+        assert needle in manifest
+    assert r.blocked is True
+    fake_run.stderr = 'pods "bypass-test" is forbidden: violates PodSecurity "restricted:latest"'
+    assert mod.s7(True, img).blocked is False                 # 서명 정책이 아닌 이유로 거부되면 시나리오 7 차단으로 세지 않음

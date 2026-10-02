@@ -1,50 +1,32 @@
-# F9. 워크로드 보안 설정 강제 : digest 없는 이미지·latest 태그·권한 상승 차단
-apiVersion: kyverno.io/v1
-kind: ClusterPolicy
+# F9. 워크로드 보안 설정 강제 : digest 없는 이미지·권한 상승·리소스 제한 누락 차단
+# Kyverno 1.16+ CEL 기반 ValidatingPolicy (kyverno.io/v1 ClusterPolicy 의 validate.pattern 대체)
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
 metadata:
   name: trustchain-workload-hardening
 spec:
-  validationFailureAction: Enforce
-  background: true
-  rules:
-    - name: require-image-digest
-      match:
-        any:
-          - resources:
-              kinds: [Pod]
-              namespaces: [app, trustchain]
-      validate:
-        message: "이미지는 digest(@sha256:...)로 지정해야 합니다."
-        pattern:
-          spec:
-            containers:
-              - image: "*@sha256:*"
-    - name: disallow-privilege-escalation
-      match:
-        any:
-          - resources:
-              kinds: [Pod]
-              namespaces: [app, trustchain]
-      validate:
-        message: "allowPrivilegeEscalation: false, runAsNonRoot: true 가 필요합니다."
-        pattern:
-          spec:
-            =(securityContext):
-              =(runAsNonRoot): true
-            containers:
-              - securityContext:
-                  allowPrivilegeEscalation: false
-    - name: require-resource-limits
-      match:
-        any:
-          - resources:
-              kinds: [Pod]
-              namespaces: [app, trustchain]
-      validate:
-        message: "메모리 limit 이 필요합니다."
-        pattern:
-          spec:
-            containers:
-              - resources:
-                  limits:
-                    memory: "?*"
+  validationActions: [Deny]
+  evaluation:
+    background:
+      enabled: true
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [pods]
+  matchConditions:
+    - name: trustchain-namespaces
+      expression: "namespaceObject.metadata.name in ['app', 'trustchain']"
+  validations:
+    - expression: "object.spec.containers.all(c, c.image.contains('@sha256:'))"
+      message: "이미지는 digest(@sha256:...)로 지정해야 합니다."
+    - expression: >-
+        object.spec.containers.all(c, has(c.securityContext) && has(c.securityContext.allowPrivilegeEscalation)
+        && c.securityContext.allowPrivilegeEscalation == false)
+        && (!has(object.spec.securityContext) || !has(object.spec.securityContext.runAsNonRoot)
+        || object.spec.securityContext.runAsNonRoot == true)
+      message: "allowPrivilegeEscalation: false, runAsNonRoot: true 가 필요합니다."
+    - expression: >-
+        object.spec.containers.all(c, has(c.resources) && has(c.resources.limits) && 'memory' in c.resources.limits)
+      message: "메모리 limit 이 필요합니다."
