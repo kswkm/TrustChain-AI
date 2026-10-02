@@ -240,3 +240,24 @@ def test_bm25_library_backend_skips_builtin_index():
     pytest.importorskip("rank_bm25")
     bm = BM25([["a", "b"], ["b", "c"]])
     assert bm.backend == "rank_bm25" and not getattr(bm, "docs", None)   # 같은 색인을 두 번 만들지 않음
+
+
+def test_cross_encoder_rerank_fuses_with_hybrid_rank():
+    # Cross-encoder 점수만으로 다시 정렬하지 않고, 하이브리드(RRF) 순위와 Cross-encoder 순위를 다시 RRF 로 결합한다
+    # (운영 규모 지식베이스에서 Cross-encoder 단독 재정렬이 MRR 을 낮춘 측정 결과에 따른 설계)
+    from trustchain.assistant.ingest import Chunk
+    from trustchain.assistant.retriever import CrossEncoderReranker, Hit
+
+    hits = [Hit(Chunk(f"c{i}", "d", "kisa", f"t{i}", "s", f"text{i}"), 1.0 - i / 10, None, None) for i in range(4)]
+
+    class FakeCE:
+        def predict(self, pairs):
+            # c3 를 가장 높게, c0 를 두 번째로 본다
+            return [{"text0": 0.8, "text1": 0.1, "text2": 0.2, "text3": 0.9}[t] for _, t in pairs]
+
+    rr = CrossEncoderReranker.__new__(CrossEncoderReranker)
+    rr.model = FakeCE()
+    out = rr.rerank("q", hits, top_k=3)
+    # 하이브리드 1위·CE 2위인 c0 가 CE 1위·하이브리드 4위인 c3 보다 앞선다
+    assert [h.chunk.chunk_id for h in out] == ["c0", "c3", "c1"]   # c1(2위·4위) 0.031754 > c2(3위·3위) 0.031746
+    assert out[0].score == pytest.approx(1 / 61 + 1 / 62)

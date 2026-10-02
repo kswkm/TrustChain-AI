@@ -65,11 +65,19 @@ class CrossEncoderReranker:
         self.model = CrossEncoder(name, revision=rev, max_length=512)
 
     def rerank(self, query: str, hits: list[Hit], top_k: int) -> list[Hit]:
+        """하이브리드(RRF) 순위와 Cross-encoder 순위를 다시 RRF 로 결합한다.
+
+        Cross-encoder 점수만으로 다시 정렬하면 운영 규모 지식베이스(57,337 청크)에서 CVE·패키지명처럼 식별자 중심 질의의
+        정답이 밀려 MRR 이 낮아졌다(0.893 → 0.870). 결합 시 0.896 으로 리랭킹 전보다 높다 (docs/evaluation.md 2절).
+        """
         if not hits:
             return []
         scores = self.model.predict([(query, h.chunk.text) for h in hits])
-        order = sorted(zip(scores, hits), key=lambda t: -float(t[0]))
-        return [Hit(h.chunk, float(s), h.bm25_rank, h.vec_rank) for s, h in order[:top_k]]
+        ce_order = sorted(range(len(hits)), key=lambda i: -float(scores[i]))
+        ce_rank = {i: r for r, i in enumerate(ce_order, 1)}
+        fused = sorted(((1 / (RRF_K + i + 1) + 1 / (RRF_K + ce_rank[i]), h) for i, h in enumerate(hits)),
+                       key=lambda t: -t[0])
+        return [Hit(h.chunk, s, h.bm25_rank, h.vec_rank) for s, h in fused[:top_k]]
 
 
 def default_reranker() -> Reranker:

@@ -118,7 +118,7 @@ Kubernetes 배포는 `kubectl apply -k deploy/k8s` ([deploy/k8s](deploy/k8s)).
 | 타이포스쿼팅·환각 탐지 F1 | 0.9 이상 | TensorFlow(Keras) 분류 모델 위험 탐지 F1 **0.999**, 3-클래스 macro F1 **0.991** (자체 구축 합성 평가셋, 576건) | `trustchain model eval --out src/trustchain/data/package_model.keras` (TensorFlow 필요) |
 | SBOM 매칭 후 알림 | 1분 이내 | SBOM 수집 → OSV 매칭 → 알림까지 테스트에서 60초 미만을 확인 | `pytest tests/test_server_feed.py` |
 | 빌드 신뢰 수준 | SLSA Build L3 | slsa-github-generator 컨테이너 생성기로 **GitHub Actions 에서 출처 증명 생성 성공** (platform·demo 이미지 2종, [CI 실행 기록](https://github.com/kswkm/TrustChain-AI/actions/runs/36807577616)), 생성된 이미지 2종 모두 **Verify Gate 검증 통과** (cosign 서명·서명 클레임·slsa-verifier·SBOM·AI-BOM 증명) | `.github/workflows/trustchain-ci.yml` |
-| AI 어시스턴트 검색 Recall@5 | 0.8 이상 | 실제 다국어 임베딩·Cross-encoder 로 운영 규모 지식베이스(57,337 청크)에서 하이브리드 **0.969** (MRR 0.893), 내장 지식베이스 1.00. 리랭킹은 내장에서 MRR 개선(0.945→0.953), 운영 규모에서는 하락(0.893→0.870) | `trustchain eval --answers --osv-dir <OSV 덤프>` |
+| AI 어시스턴트 검색 Recall@5 | 0.8 이상 | 실제 다국어 임베딩·Cross-encoder 로 운영 규모 지식베이스(57,337 청크)에서 **0.969**, 내장 지식베이스 1.00. 리랭킹 전후 MRR 0.893 → **0.896** (운영 규모), 0.945 → **0.961** (내장) | `trustchain eval --answers --osv-dir <OSV 덤프>` |
 
 - 분류 모델 평가셋은 인기 패키지 이름에 공개 보고된 위장 패턴을 적용하고 메타데이터를 전형적 분포에서 표본 추출해 만든 **합성 데이터**입니다.
   실제 PyPI 데이터(OSV 악성 11,768건 · 정상 2,000개) 검증에서는 정상 패키지 실사용 오탐률 7.8%(차단 2.1%, Keras),
