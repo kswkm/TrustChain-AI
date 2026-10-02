@@ -145,6 +145,28 @@ class HashingEmbedder:
 # 기본 임베딩 모델과 리비전(HuggingFace 커밋) 고정 : 저장소가 바뀌어도 다른 가중치가 들어오지 않고 측정이 재현된다
 EMBED_MODEL = "intfloat/multilingual-e5-small"
 EMBED_REVISION = "614241f622f53c4eeff9890bdc4f31cfecc418b3"
+# 그 리비전의 가중치 파일(model.safetensors) SHA-256 : 로드 전에 대조 (models.toml AI-BOM 선언과 같은 값)
+EMBED_SHA256 = "1a55775f53449dac10a2bcbc312469fac40b96d53198c407081a831f81c98477"
+WEIGHTS_FILE = "model.safetensors"
+
+
+class ModelIntegrityError(RuntimeError):
+    """고정한 가중치 해시와 실제 파일이 다름. 대체 구현으로 넘어가지 않고 로드를 거부한다 (fail-closed)."""
+
+
+def verify_hf_weights(repo_id: str, revision: str, expected_sha256: str, filename: str = WEIGHTS_FILE) -> None:
+    """HuggingFace 에서 고정 리비전의 가중치 파일을 받아(캐시 재사용) SHA-256 을 대조한다."""
+    import hashlib
+
+    from huggingface_hub import hf_hub_download
+
+    path = hf_hub_download(repo_id, filename, revision=revision)
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    if h.hexdigest() != expected_sha256:
+        raise ModelIntegrityError(f"{repo_id}@{revision[:12]} 가중치 해시가 고정값과 다릅니다 - 로드를 거부합니다")
 
 
 def _revision(model_name: str, default_model: str, default_revision: str, env: str) -> str | None:
@@ -157,8 +179,10 @@ class SentenceTransformerEmbedder:
         from sentence_transformers import SentenceTransformer
 
         self.model_name = model_name or os.environ.get("TRUSTCHAIN_EMBED_MODEL", EMBED_MODEL)
-        self.model = SentenceTransformer(
-            self.model_name, revision=_revision(self.model_name, EMBED_MODEL, EMBED_REVISION, "TRUSTCHAIN_EMBED_REVISION"))
+        rev = _revision(self.model_name, EMBED_MODEL, EMBED_REVISION, "TRUSTCHAIN_EMBED_REVISION")
+        if self.model_name == EMBED_MODEL and rev == EMBED_REVISION:
+            verify_hf_weights(EMBED_MODEL, EMBED_REVISION, EMBED_SHA256)  # 해시 검증 후 로드
+        self.model = SentenceTransformer(self.model_name, revision=rev)
         get_dim = getattr(self.model, "get_embedding_dimension", None) or self.model.get_sentence_embedding_dimension
         self.dim = int(get_dim())
         self.e5 = "e5" in self.model_name.lower()
@@ -174,6 +198,8 @@ def default_embedder() -> Embedder:
     if os.environ.get("TRUSTCHAIN_EMBEDDER", "auto") != "hashing":
         try:
             return SentenceTransformerEmbedder()
+        except ModelIntegrityError:
+            raise  # 변조 가능성 : 대체 구현으로 조용히 넘어가지 않는다
         except Exception as e:  # 모델 미설치/다운로드 불가 → 대체 구현
             logging.getLogger("trustchain.assistant").info("대체 구현 사용: %s", e.__class__.__name__)
     return HashingEmbedder(int(os.environ.get("TRUSTCHAIN_EMBED_DIM", "384")))

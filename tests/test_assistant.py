@@ -207,12 +207,18 @@ def _fake_st_module(monkeypatch, captured):
     monkeypatch.setitem(sys.modules, "sentence_transformers", mod)
 
 
-def test_default_models_are_pinned_to_revision(monkeypatch):
+def test_default_models_are_pinned_to_revision(monkeypatch, tmp_path):
+    import hashlib
+
+    from trustchain.assistant import retriever, text
     from trustchain.assistant.retriever import RERANK_REVISION, CrossEncoderReranker
     from trustchain.assistant.text import EMBED_REVISION, SentenceTransformerEmbedder
 
     captured = []
     _fake_st_module(monkeypatch, captured)
+    _fake_hub(monkeypatch, tmp_path, b"w", [])
+    monkeypatch.setattr(text, "EMBED_SHA256", hashlib.sha256(b"w").hexdigest())
+    monkeypatch.setattr(retriever, "RERANK_SHA256", hashlib.sha256(b"w").hexdigest())
     monkeypatch.delenv("TRUSTCHAIN_EMBED_MODEL", raising=False)
     monkeypatch.delenv("TRUSTCHAIN_RERANK_MODEL", raising=False)
     SentenceTransformerEmbedder()
@@ -321,3 +327,82 @@ def test_chunk_nvd_fixed_versions_per_product():
         {"vulnerable": True, "criteria": "cpe:2.3:a:cisco:widget:*:*:*:*:*:*:*:*", "versionEndExcluding": "1.0.9"})
     fix = next(c for c in chunk_nvd(item) if c.section == "조치 방법").text
     assert "python:requests → 2.31.0 이상" in fix and "cisco:widget → 1.0.9 이상" in fix
+
+
+def _fake_hub(monkeypatch, tmp_path, content: bytes, calls: list):
+    import sys
+    import types
+
+    def hf_hub_download(repo_id, filename, revision=None):
+        calls.append((repo_id, filename, revision))
+        f = tmp_path / f"{repo_id.replace('/', '_')}_{filename}"
+        f.write_bytes(content)
+        return str(f)
+
+    monkeypatch.setitem(sys.modules, "huggingface_hub", types.SimpleNamespace(hf_hub_download=hf_hub_download))
+
+
+def test_default_model_weights_hash_verified_before_load(monkeypatch, tmp_path):
+    import hashlib
+
+    from trustchain.assistant import text
+    from trustchain.assistant.text import EMBED_REVISION, SentenceTransformerEmbedder
+
+    captured, calls = [], []
+    _fake_st_module(monkeypatch, captured)
+    _fake_hub(monkeypatch, tmp_path, b"weights", calls)
+    monkeypatch.delenv("TRUSTCHAIN_EMBED_MODEL", raising=False)
+    monkeypatch.delenv("TRUSTCHAIN_EMBED_REVISION", raising=False)
+    monkeypatch.setattr(text, "EMBED_SHA256", hashlib.sha256(b"weights").hexdigest())
+    SentenceTransformerEmbedder()
+    assert calls == [("intfloat/multilingual-e5-small", "model.safetensors", EMBED_REVISION)] and captured
+
+
+def test_tampered_weights_refuse_load_without_fallback(monkeypatch, tmp_path):
+    from trustchain.assistant import text
+    from trustchain.assistant.text import ModelIntegrityError, default_embedder
+
+    captured, calls = [], []
+    _fake_st_module(monkeypatch, captured)
+    _fake_hub(monkeypatch, tmp_path, b"tampered", calls)
+    monkeypatch.delenv("TRUSTCHAIN_EMBED_MODEL", raising=False)
+    monkeypatch.delenv("TRUSTCHAIN_EMBED_REVISION", raising=False)
+    monkeypatch.setenv("TRUSTCHAIN_EMBEDDER", "auto")
+    monkeypatch.setattr(text, "EMBED_SHA256", "0" * 64)
+    with pytest.raises(ModelIntegrityError):
+        default_embedder()            # 해시 불일치는 대체 임베딩으로 조용히 넘어가지 않는다 (fail-closed)
+    assert captured == []             # 모델을 로드하지 않음
+
+
+def test_reranker_weights_verified(monkeypatch, tmp_path):
+    import hashlib
+
+    from trustchain.assistant import retriever
+    from trustchain.assistant.retriever import RERANK_REVISION, CrossEncoderReranker
+    from trustchain.assistant.text import ModelIntegrityError
+
+    captured, calls = [], []
+    _fake_st_module(monkeypatch, captured)
+    _fake_hub(monkeypatch, tmp_path, b"ce", calls)
+    monkeypatch.delenv("TRUSTCHAIN_RERANK_MODEL", raising=False)
+    monkeypatch.delenv("TRUSTCHAIN_RERANK_REVISION", raising=False)
+    monkeypatch.setattr(retriever, "RERANK_SHA256", hashlib.sha256(b"ce").hexdigest())
+    CrossEncoderReranker()
+    assert calls == [("cross-encoder/mmarco-mMiniLMv2-L12-H384-v1", "model.safetensors", RERANK_REVISION)]
+    monkeypatch.setattr(retriever, "RERANK_SHA256", "0" * 64)
+    monkeypatch.setenv("TRUSTCHAIN_RERANKER", "auto")
+    with pytest.raises(ModelIntegrityError):
+        retriever.default_reranker()
+
+
+def test_pinned_hashes_match_platform_aibom():
+    import tomllib
+
+    from trustchain.assistant.retriever import RERANK_REVISION, RERANK_SHA256
+    from trustchain.assistant.text import EMBED_REVISION, EMBED_SHA256
+
+    decl = {m["name"]: m for m in tomllib.loads((ROOT / "models.toml").read_text(encoding="utf-8"))["model"]}
+    assert decl["intfloat/multilingual-e5-small"]["sha256"] == EMBED_SHA256
+    assert decl["intfloat/multilingual-e5-small"]["revision"] == EMBED_REVISION
+    assert decl["cross-encoder/mmarco-mMiniLMv2-L12-H384-v1"]["sha256"] == RERANK_SHA256
+    assert decl["cross-encoder/mmarco-mMiniLMv2-L12-H384-v1"]["revision"] == RERANK_REVISION

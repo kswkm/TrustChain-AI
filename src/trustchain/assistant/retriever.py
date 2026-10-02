@@ -8,7 +8,16 @@ from dataclasses import dataclass
 from typing import Protocol, Sequence
 
 from trustchain.assistant.ingest import Chunk
-from trustchain.assistant.text import BM25, Embedder, HashingEmbedder, _revision, cosine, tokenize
+from trustchain.assistant.text import (
+    BM25,
+    Embedder,
+    HashingEmbedder,
+    ModelIntegrityError,
+    _revision,
+    cosine,
+    tokenize,
+    verify_hf_weights,
+)
 
 RRF_K = 60
 
@@ -54,6 +63,7 @@ class LexicalReranker:
 
 RERANK_MODEL = "cross-encoder/mmarco-mMiniLMv2-L12-H384-v1"
 RERANK_REVISION = "1427fd652930e4ba29e8149678df786c240d8825"
+RERANK_SHA256 = "5daeca2481a76b5976a2bdc32f0a78532b6716da4f8cd3ff59460ef8d2f359b4"
 
 
 class CrossEncoderReranker:
@@ -62,6 +72,8 @@ class CrossEncoderReranker:
 
         name = model_name or os.environ.get("TRUSTCHAIN_RERANK_MODEL", RERANK_MODEL)
         rev = _revision(name, RERANK_MODEL, RERANK_REVISION, "TRUSTCHAIN_RERANK_REVISION")
+        if name == RERANK_MODEL and rev == RERANK_REVISION:
+            verify_hf_weights(RERANK_MODEL, RERANK_REVISION, RERANK_SHA256)  # 해시 검증 후 로드
         self.model = CrossEncoder(name, revision=rev, max_length=512)
 
     def rerank(self, query: str, hits: list[Hit], top_k: int) -> list[Hit]:
@@ -84,6 +96,8 @@ def default_reranker() -> Reranker:
     if os.environ.get("TRUSTCHAIN_RERANKER", "auto") != "lexical":
         try:
             return CrossEncoderReranker()
+        except ModelIntegrityError:
+            raise  # 변조 가능성 : 대체 구현으로 조용히 넘어가지 않는다
         except Exception as e:  # 모델 미설치/다운로드 불가 → 대체 구현
             logging.getLogger("trustchain.assistant").info("대체 구현 사용: %s", e.__class__.__name__)
     return LexicalReranker()
