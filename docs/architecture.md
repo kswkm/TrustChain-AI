@@ -46,7 +46,9 @@
 7. OSV 취약점 + 유지관리(PyPI 배포·GitHub 저장소 활동) + Scorecard → 신뢰 점수, 정책 하한 미달 시 주의
 
 ### F5 게이트 정책
-`trustchain.toml` 의 `[gate]` (기본: CRITICAL 1건 이상 실패, 차단 패키지 1건 이상 실패). 결과는 JSON·SARIF 로 출력하고
+빌드 게이트(`trustchain gate`)는 `trustchain.toml` 의 `[gate]` (기본: CRITICAL 1건 이상 실패, 차단 패키지 1건 이상 실패),
+커밋 시점 점검(`trustchain check` · pre-commit/pre-push)은 `[check]` (기본: HIGH 이상 1건 이상 실패)를 씁니다.
+외부 도구(pip-audit·OSV-Scanner·ModelScan·Checkov)의 실행 상태(ok/missing/failed/offline)는 리포트 `meta` 에 남습니다. 결과는 JSON·SARIF 로 출력하고
 GitHub Code Scanning 에 업로드합니다.
 
 ### F8 Verify Gate

@@ -16,12 +16,12 @@
 | | **F2** 환각 패키지 탐지 (PyPI 존재·등록 시점, import ↔ 의존성 불일치) | [packages/checker.py](src/trustchain/packages/checker.py) |
 | | **F3** 타이포스쿼팅 탐지 (편집거리·키보드 인접·형태 유사 문자·n-gram 임베딩 + 분류 모델) | [packages/typosquat.py](src/trustchain/packages/typosquat.py), [classifier.py](src/trustchain/packages/classifier.py) |
 | | **F4** 의존성 신뢰 점수 0~100 (OSV·유지관리(PyPI 배포 + GitHub REST API 저장소 활동)·관리자 수·OpenSSF Scorecard) | [packages/trust_score.py](src/trustchain/packages/trust_score.py) |
-| ② 빌드 | **F5** 보안 스캔 게이트 (코드·의존성(자체 OSV 조회 + 빌드 게이트에서 pip-audit·OSV-Scanner)·악성 pickle 모델·이미지(Trivy, 지원 종료 OS 차단)·IaC) | [scan/](src/trustchain/scan) |
+| ② 빌드 | **F5** 보안 스캔 게이트 (코드·의존성(자체 OSV 조회 + 빌드 게이트에서 pip-audit·OSV-Scanner)·악성 pickle 모델(자체 스캐너 + ModelScan)·이미지(Trivy, 지원 종료 OS 차단)·IaC(자체 룰 + Checkov)) | [scan/](src/trustchain/scan) |
 | | **F6** SBOM(CycloneDX 1.6, Syft) + AI-BOM(모델·가중치 해시·데이터셋 출처) | [bom/](src/trustchain/bom) |
 | | **F7** SLSA Build L3 출처 증명 · cosign keyless 서명 | [.github/workflows/trustchain-ci.yml](.github/workflows/trustchain-ci.yml) |
 | ③ 배포 | **F8** Verify Gate (서명·인증서 클레임·SLSA·SBOM/AI-BOM 증명) | [attest/verify.py](src/trustchain/attest/verify.py), [trustchain-cd.yml](.github/workflows/trustchain-cd.yml) |
 | | **F9** Kyverno 실행 정책 · IaC 점검 (자체 룰 + Checkov) | [deploy/k8s/kyverno](deploy/k8s/kyverno), [iac/k8s.py](src/trustchain/iac/k8s.py) |
-| ④ 운영 | **F10** 취약점 피드 모니터 (OSV·NVD → SBOM 매칭 → Slack·메일) | [feed/](src/trustchain/feed) |
+| ④ 운영 | **F10** 취약점 피드 모니터 (OSV·NVD 신규 취약점 주기 수집 → SBOM 매칭(NVD 는 CPE) → Slack·메일) | [feed/](src/trustchain/feed) |
 | | **F11** AI 보안 어시스턴트 (OSV·NVD 권고문·CWE·KISA 지식베이스, Kiwi + rank_bm25 키워드 검색 + 다국어 벡터 RRF 하이브리드 검색, Cross-encoder 리랭킹, 근거 인용, PR 초안) | [assistant/](src/trustchain/assistant) |
 | | **F12** 대시보드 · 알림 (Streamlit) | [dashboard/app.py](src/trustchain/dashboard/app.py) |
 
@@ -131,6 +131,8 @@ Kubernetes 배포는 `kubectl apply -k deploy/k8s` ([deploy/k8s](deploy/k8s)).
   같은 평가셋에서 위험 탐지 F1 0.995 · macro F1 0.950 인 경량 선형 모델로 판정합니다. CI 게이트는 `TRUSTCHAIN_PKG_MODEL=keras` 로 Keras 판정을 강제하며,
   판정 결과에는 판정 주체(분류 모델 이름, 또는 PyPI 에 없는 패키지처럼 모델 이전에 결론 난 경우 "규칙 (...)")가 표시됩니다.
 - RAG 수치는 실제 모델(multilingual-e5-small, mmarco Cross-encoder, Kiwi + rank_bm25)과 외부 모델 없는 기준선을 모두 측정했습니다. 측정 조건·지식베이스 구성은 [docs/evaluation.md](docs/evaluation.md) 2절에 있습니다.
+
+기획서 요구사항별 구현 위치·테스트·실제 환경 검증 : [docs/proposal-traceability.md](docs/proposal-traceability.md)
 
 상세 설명: [docs/architecture.md](docs/architecture.md) · [docs/scenarios.md](docs/scenarios.md) · [docs/evaluation.md](docs/evaluation.md)
 
