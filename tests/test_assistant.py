@@ -190,3 +190,47 @@ def test_knowledge_chunks_adds_sources_and_dedupes(tmp_path):
     assert any(i.startswith("PYSEC-2099-1") or "PYSEC-2099-1" in i for i in ids)
     assert any(i.startswith("cwe:89:") for i in ids)
     assert len(out) > len(base)
+
+
+def _fake_st_module(monkeypatch, captured):
+    import sys
+    import types
+
+    class Fake:
+        def __init__(self, name, **kw):
+            captured.append((name, kw))
+
+        def get_sentence_embedding_dimension(self):
+            return 384
+
+    mod = types.SimpleNamespace(SentenceTransformer=Fake, CrossEncoder=Fake)
+    monkeypatch.setitem(sys.modules, "sentence_transformers", mod)
+
+
+def test_default_models_are_pinned_to_revision(monkeypatch):
+    from trustchain.assistant.retriever import RERANK_REVISION, CrossEncoderReranker
+    from trustchain.assistant.text import EMBED_REVISION, SentenceTransformerEmbedder
+
+    captured = []
+    _fake_st_module(monkeypatch, captured)
+    monkeypatch.delenv("TRUSTCHAIN_EMBED_MODEL", raising=False)
+    monkeypatch.delenv("TRUSTCHAIN_RERANK_MODEL", raising=False)
+    SentenceTransformerEmbedder()
+    CrossEncoderReranker()
+    assert captured[0] == ("intfloat/multilingual-e5-small", {"revision": EMBED_REVISION})
+    assert captured[1][0] == "cross-encoder/mmarco-mMiniLMv2-L12-H384-v1" and captured[1][1]["revision"] == RERANK_REVISION
+    assert len(EMBED_REVISION) == 40 and len(RERANK_REVISION) == 40
+
+
+def test_custom_model_uses_its_own_revision(monkeypatch):
+    from trustchain.assistant.text import SentenceTransformerEmbedder
+
+    captured = []
+    _fake_st_module(monkeypatch, captured)
+    monkeypatch.setenv("TRUSTCHAIN_EMBED_MODEL", "org/other-model")
+    monkeypatch.delenv("TRUSTCHAIN_EMBED_REVISION", raising=False)
+    SentenceTransformerEmbedder()
+    assert captured[0] == ("org/other-model", {"revision": None})        # 다른 모델에 기본 리비전을 잘못 붙이지 않음
+    monkeypatch.setenv("TRUSTCHAIN_EMBED_REVISION", "a" * 40)
+    SentenceTransformerEmbedder()
+    assert captured[1] == ("org/other-model", {"revision": "a" * 40})

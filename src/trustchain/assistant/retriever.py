@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from typing import Protocol, Sequence
 
 from trustchain.assistant.ingest import Chunk
-from trustchain.assistant.text import BM25, Embedder, HashingEmbedder, cosine, tokenize
+from trustchain.assistant.text import BM25, Embedder, HashingEmbedder, _revision, cosine, tokenize
 
 RRF_K = 60
 
@@ -52,12 +52,17 @@ class LexicalReranker:
         return [Hit(h.chunk, s, h.bm25_rank, h.vec_rank) for s, h in scored[:top_k]]
 
 
+RERANK_MODEL = "cross-encoder/mmarco-mMiniLMv2-L12-H384-v1"
+RERANK_REVISION = "1427fd652930e4ba29e8149678df786c240d8825"
+
+
 class CrossEncoderReranker:
     def __init__(self, model_name: str | None = None):
         from sentence_transformers import CrossEncoder
 
-        self.model = CrossEncoder(model_name or os.environ.get(
-            "TRUSTCHAIN_RERANK_MODEL", "cross-encoder/mmarco-mMiniLMv2-L12-H384-v1"), max_length=512)
+        name = model_name or os.environ.get("TRUSTCHAIN_RERANK_MODEL", RERANK_MODEL)
+        rev = _revision(name, RERANK_MODEL, RERANK_REVISION, "TRUSTCHAIN_RERANK_REVISION")
+        self.model = CrossEncoder(name, revision=rev, max_length=512)
 
     def rerank(self, query: str, hits: list[Hit], top_k: int) -> list[Hit]:
         if not hits:

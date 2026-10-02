@@ -191,3 +191,33 @@ def test_image_gate_blocks_end_of_support_os(tmp_path):
     assert not out.passed
     f = next(f for f in out.report.findings if f.rule_id == "TC-IMG-006")
     assert f.severity.value == "CRITICAL" and "debian 10.13" in f.message
+
+
+def test_aibom_records_remote_pinned_model(tmp_path):
+    from trustchain.bom.aibom import generate_aibom
+
+    (tmp_path / "models.toml").write_text(
+        '[[model]]\nname = "intfloat/multilingual-e5-small"\nversion = "614241f6"\nframework = "sentence-transformers"\n'
+        'source_repo = "https://huggingface.co/intfloat/multilingual-e5-small"\n'
+        'revision = "614241f622f53c4eeff9890bdc4f31cfecc418b3"\n'
+        'sha256 = "1a55775f53449dac10a2bcbc312469fac40b96d53198c407081a831f81c98477"\nfile = "model.safetensors"\n',
+        encoding="utf-8")
+    bom = generate_aibom(tmp_path, [], [], "platform")
+    comp = next(c for c in bom["components"] if c["name"] == "intfloat/multilingual-e5-small")
+    assert comp["hashes"] == [{"alg": "SHA-256", "content": "1a55775f53449dac10a2bcbc312469fac40b96d53198c407081a831f81c98477"}]
+    props = {p["name"]: p["value"] for p in comp["properties"]}
+    assert props["trustchain:revision"] == "614241f622f53c4eeff9890bdc4f31cfecc418b3" and props["trustchain:remote"] == "true"
+
+
+def test_aibom_verify_remote_model_requires_pinning(tmp_path):
+    from trustchain.bom.aibom import verify_aibom
+
+    def comp(props):
+        return {"type": "machine-learning-model", "name": "m", "hashes": [{"alg": "SHA-256", "content": "ab" * 32}],
+                "properties": [{"name": k, "value": v} for k, v in props.items()]}
+
+    pinned = comp({"trustchain:remote": "true", "trustchain:revision": "614241f622f53c4eeff9890bdc4f31cfecc418b3"})
+    unpinned = comp({"trustchain:remote": "true"})
+    checks = verify_aibom({"components": [pinned, unpinned]}, tmp_path)
+    assert [c.ok for c in checks] == [True, False]
+    assert "리비전" in checks[1].reason

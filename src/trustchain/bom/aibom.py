@@ -79,6 +79,12 @@ def model_component(decl: dict[str, Any], file_path: Path | None, root: Path) ->
             {"name": PROP_PATH, "value": rel(file_path, root)},
             {"name": PROP_FORMAT, "value": _format_of(file_path)},
         ]
+    elif decl.get("sha256"):
+        # 실행 시 내려받는 원격 모델(예: HuggingFace) : 리비전으로 고정한 가중치 파일의 해시를 선언값으로 기록
+        comp["hashes"] = [{"alg": "SHA-256", "content": str(decl["sha256"]).lower()}]
+        comp["properties"].append({"name": "trustchain:remote", "value": "true"})
+        if decl.get("file"):
+            comp["properties"].append({"name": PROP_FORMAT, "value": _format_of(Path(str(decl["file"])))})
     ext = []
     if decl.get("source_repo"):
         ext.append({"type": "vcs", "url": decl["source_repo"],
@@ -177,6 +183,13 @@ def verify_aibom(aibom: dict[str, Any], root: Path, scan: bool = True) -> list[M
             continue
         path = _prop(c, PROP_PATH)
         expected = next((h["content"] for h in c.get("hashes", []) if h.get("alg") == "SHA-256"), None)
+        if _prop(c, "trustchain:remote") == "true":
+            # 실행 시 내려받는 원격 모델 : 리비전(커밋)과 가중치 해시가 모두 고정되어 있어야 통과
+            rev = _prop(c, "trustchain:revision") or ""
+            pinned = bool(expected) and len(rev) == 40 and all(ch in "0123456789abcdef" for ch in rev)
+            out.append(ModelCheck(c.get("name", "?"), None, expected, None, pinned,
+                                  f"원격 모델 (리비전 {rev[:12]} 고정)" if pinned else "원격 모델의 리비전·해시가 고정되지 않음"))
+            continue
         if not path or not expected:
             out.append(ModelCheck(c.get("name", "?"), path, expected, None, False, "AI-BOM 에 경로/해시 정보 없음"))
             continue

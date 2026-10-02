@@ -141,12 +141,23 @@ class HashingEmbedder:
         return [self._vec(t) for t in texts]
 
 
+# 기본 임베딩 모델과 리비전(HuggingFace 커밋) 고정 : 저장소가 바뀌어도 다른 가중치가 들어오지 않고 측정이 재현된다
+EMBED_MODEL = "intfloat/multilingual-e5-small"
+EMBED_REVISION = "614241f622f53c4eeff9890bdc4f31cfecc418b3"
+
+
+def _revision(model_name: str, default_model: str, default_revision: str, env: str) -> str | None:
+    """환경변수로 지정한 리비전 → 기본 모델이면 고정 리비전 → 그 밖의 모델은 None(사용자가 고정해야 함)."""
+    return os.environ.get(env) or (default_revision if model_name == default_model else None)
+
+
 class SentenceTransformerEmbedder:
     def __init__(self, model_name: str | None = None):
         from sentence_transformers import SentenceTransformer
 
-        self.model_name = model_name or os.environ.get("TRUSTCHAIN_EMBED_MODEL", "intfloat/multilingual-e5-small")
-        self.model = SentenceTransformer(self.model_name)
+        self.model_name = model_name or os.environ.get("TRUSTCHAIN_EMBED_MODEL", EMBED_MODEL)
+        self.model = SentenceTransformer(
+            self.model_name, revision=_revision(self.model_name, EMBED_MODEL, EMBED_REVISION, "TRUSTCHAIN_EMBED_REVISION"))
         self.dim = int(self.model.get_sentence_embedding_dimension())
         self.e5 = "e5" in self.model_name.lower()
 

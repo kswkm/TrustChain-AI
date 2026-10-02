@@ -1,0 +1,54 @@
+# TrustChain AI 플랫폼 자체 AI-BOM 모델 선언 (trustchain aibom → CycloneDX machine-learning-model)
+# 플랫폼 이미지에도 SBOM·AI-BOM·서명·출처 증명을 적용한다 (개발기획서 2-6 공급망)
+
+# F3 패키지 위험 분류 모델 (패키지에 포함, 로드 시 classifier.KERAS_MODEL_SHA256 으로 해시 검증)
+[[model]]
+name = "trustchain-package-classifier"
+version = "1.0.0"
+path = "src/trustchain/data/package_model.keras"
+framework = "tensorflow-keras"
+task = "package-risk-classification"
+license = "Apache-2.0"
+source_repo = "https://github.com/kswkm/TrustChain-AI"
+# 모델을 학습·탑재한 커밋 (학습 기록 : src/trustchain/data/package_model.keras.json)
+revision = "d09f15b0065fab36e9c46759721a8c339721de30"
+
+[[model.dataset]]
+name = "trustchain-synthetic-typosquat-v1"
+description = "인기 패키지 이름에 공개 보고된 위장 패턴을 적용한 합성 평가셋 (packages/training.py build_dataset seed 7, 기본 이름 단위 70/30 분리)"
+license = "Apache-2.0"
+
+# F3 경량 대체 모델 (TensorFlow 미설치 환경)
+[[model]]
+name = "trustchain-package-classifier-linear"
+version = "1.0.0"
+path = "src/trustchain/data/package_model.json"
+framework = "python-logistic-regression"
+task = "package-risk-classification"
+license = "Apache-2.0"
+source_repo = "https://github.com/kswkm/TrustChain-AI"
+revision = "16c0603125c873f3ed05ec9aceedc0dec08f54eb"
+
+# F11 RAG 임베딩 모델 (실행 시 HuggingFace 에서 내려받음, 리비전·가중치 해시 고정)
+[[model]]
+name = "intfloat/multilingual-e5-small"
+version = "614241f6"
+framework = "sentence-transformers"
+task = "text-embedding"
+license = "MIT"
+source_repo = "https://huggingface.co/intfloat/multilingual-e5-small"
+revision = "614241f622f53c4eeff9890bdc4f31cfecc418b3"
+file = "model.safetensors"
+sha256 = "1a55775f53449dac10a2bcbc312469fac40b96d53198c407081a831f81c98477"
+
+# F11 RAG 리랭킹 모델 (Cross-encoder)
+[[model]]
+name = "cross-encoder/mmarco-mMiniLMv2-L12-H384-v1"
+version = "1427fd65"
+framework = "sentence-transformers"
+task = "text-reranking"
+license = "Apache-2.0"
+source_repo = "https://huggingface.co/cross-encoder/mmarco-mMiniLMv2-L12-H384-v1"
+revision = "1427fd652930e4ba29e8149678df786c240d8825"
+file = "model.safetensors"
+sha256 = "5daeca2481a76b5976a2bdc32f0a78532b6716da4f8cd3ff59460ef8d2f359b4"
