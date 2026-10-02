@@ -13,9 +13,11 @@ model_dirs = ["models", "model"]
 min_severity = "LOW"
 
 [check]
-# 커밋 시점 점검(trustchain check · pre-commit/pre-push) 기준. 기본: HIGH 이상 1건이라도 있으면 커밋·push 차단
+# 커밋 시점 점검(trustchain check · pre-commit/pre-push) 기준. 기본: 작성 중인 코드·패키지 판정에서 HIGH 이상 1건이라도
+# 있으면 커밋·push 차단. 의존성 권고문은 보고만 하고 빌드 게이트([gate])가 판정. 신뢰 점수 하한 등 나머지는 [gate] 설정을 따름
 max_critical = 0
 max_high = 0
+categories = ["code", "package"]
 
 [gate]
 # 심각도별 허용 건수 (초과 시 게이트 실패). 기본: CRITICAL 1건 이상이면 빌드 중단

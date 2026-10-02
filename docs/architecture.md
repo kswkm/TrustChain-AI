@@ -47,7 +47,8 @@
 
 ### F5 게이트 정책
 빌드 게이트(`trustchain gate`)는 `trustchain.toml` 의 `[gate]` (기본: CRITICAL 1건 이상 실패, 차단 패키지 1건 이상 실패),
-커밋 시점 점검(`trustchain check` · pre-commit/pre-push)은 `[check]` (기본: HIGH 이상 1건 이상 실패)를 씁니다.
+커밋 시점 점검(`trustchain check` · pre-commit/pre-push)은 `[check]` 의 심각도 한도·분류만 덮어씁니다 (기본: 코드·패키지 판정에서
+HIGH 이상 1건 이상 실패, 의존성 권고문은 보고만 하고 빌드 게이트가 판정, 신뢰 점수 하한 등 나머지는 `[gate]` 를 따름).
 외부 도구(pip-audit·OSV-Scanner·ModelScan·Checkov)의 실행 상태(ok/missing/failed/offline)는 리포트 `meta` 에 남습니다. 결과는 JSON·SARIF 로 출력하고
 GitHub Code Scanning 에 업로드합니다.
 
