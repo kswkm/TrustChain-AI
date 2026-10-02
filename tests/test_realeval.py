@@ -242,3 +242,9 @@ def test_read_jsonl_keeps_unicode_line_separators(tmp_path):
     rows = [{"name": "a", "summary": "first\u2028second\x85third"}]
     _write_jsonl(tmp_path / "x.jsonl", rows)
     assert _read_jsonl(tmp_path / "x.jsonl") == rows
+
+
+def test_metrics_undefined_for_empty_inputs():
+    # 빈 집합의 AUC 0.0 은 '완전히 반대로 판정'으로 읽히므로 정의되지 않음(None)으로 낸다
+    assert auc([], [0.1]) is None and auc([0.1], []) is None
+    assert tpr_at_fpr([], [0.1], 0.01) == (None, None)

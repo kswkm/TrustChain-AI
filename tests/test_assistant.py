@@ -234,3 +234,9 @@ def test_custom_model_uses_its_own_revision(monkeypatch):
     monkeypatch.setenv("TRUSTCHAIN_EMBED_REVISION", "a" * 40)
     SentenceTransformerEmbedder()
     assert captured[1] == ("org/other-model", {"revision": "a" * 40})
+
+
+def test_bm25_library_backend_skips_builtin_index():
+    pytest.importorskip("rank_bm25")
+    bm = BM25([["a", "b"], ["b", "c"]])
+    assert bm.backend == "rank_bm25" and not getattr(bm, "docs", None)   # 같은 색인을 두 번 만들지 않음

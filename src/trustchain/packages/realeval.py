@@ -98,10 +98,10 @@ def sample_benign(candidates: dict[str, list[tuple[str, int | None]]], targets: 
     return rows, excluded
 
 
-def auc(pos: list[float], neg: list[float]) -> float:
-    """악성 점수가 정상 점수보다 높을 확률 (동점은 0.5, Mann-Whitney U / (n·m))."""
+def auc(pos: list[float], neg: list[float]) -> float | None:
+    """악성 점수가 정상 점수보다 높을 확률 (동점은 0.5, Mann-Whitney U / (n·m)). 한쪽이 비면 정의되지 않음(None)."""
     if not pos or not neg:
-        return 0.0
+        return None
     ns = sorted(neg)
     wins = 0.0
     for x in pos:
@@ -110,13 +110,13 @@ def auc(pos: list[float], neg: list[float]) -> float:
     return wins / (len(pos) * len(ns))
 
 
-def tpr_at_fpr(pos: list[float], neg: list[float], target: float) -> tuple[float, float]:
+def tpr_at_fpr(pos: list[float], neg: list[float], target: float) -> tuple[float | None, float | None]:
     """정상 오탐률이 target 이하인 가장 낮은 기준점(점수 >= 기준이면 위험)에서의 (탐지율, 달성 오탐률).
 
     기준점은 정상 점수 값에서만 고르므로 동점 묶음은 통째로 기준 위 또는 아래에 놓인다.
     """
     if not pos or not neg:
-        return 0.0, 0.0
+        return None, None
     top = max(neg)
     best = (sum(1 for x in pos if x > top) / len(pos), 0.0)  # 모든 정상 점수보다 위
     for t in sorted(set(neg), reverse=True):
@@ -198,9 +198,12 @@ def _fp_rates(classes: list[int]) -> dict[str, Any]:
 def _name_signal(pos: list[float], neg: list[float]) -> dict[str, Any]:
     t1, f1 = tpr_at_fpr(pos, neg, 0.01)
     t5, f5 = tpr_at_fpr(pos, neg, 0.05)
-    return {"n_pos": len(pos), "n_neg": len(neg), "auc": round(auc(pos, neg), 4),
-            "tpr_at_fpr_1pct": round(t1, 4), "fpr_1pct": round(f1, 4),
-            "tpr_at_fpr_5pct": round(t5, 4), "fpr_5pct": round(f5, 4)}
+
+    def r(x: float | None) -> float | None:
+        return None if x is None else round(x, 4)
+
+    return {"n_pos": len(pos), "n_neg": len(neg), "auc": r(auc(pos, neg)),
+            "tpr_at_fpr_1pct": r(t1), "fpr_1pct": r(f1), "tpr_at_fpr_5pct": r(t5), "fpr_5pct": r(f5)}
 
 
 def evaluate_real(model: Any, snapshot_dir: Path) -> dict[str, Any]:

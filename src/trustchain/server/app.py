@@ -184,7 +184,8 @@ def create_app(database_url: str | None = None, monitor=None, assistant_factory=
         try:
             body = SBOMIn(service=service, digest=digest, image=image, sbom=sbom)
         except ValidationError as e:
-            raise HTTPException(422, [{"loc": x.get("loc"), "msg": x.get("msg")} for x in e.errors()[:20]]) from None
+            errs = [{"loc": x.get("loc"), "msg": x.get("msg")} for x in e.errors()[:20]]
+            return JSONResponse(status_code=422, content={"detail": "입력값 검증 실패", "errors": errs})
         out = await run_in_threadpool(post_sbom, body, s, _)
         return out | {"filename": name}
 

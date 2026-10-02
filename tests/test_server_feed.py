@@ -176,3 +176,21 @@ def test_sbom_file_upload(env, monkeypatch):
     big = {"file": ("sbom.json", b" " * 200 + b"{}", "application/json")}
     assert client.post("/api/v1/sboms/upload", data={"service": "upl"}, files=big,
                        headers=H(tok["ingest"])).status_code == 413
+
+
+def test_unauthenticated_post_rejected_before_body(env):
+    # 인증 헤더가 없으면 본문(멀티파트)을 해석하기 전에 401 : 깨진 본문이어도 파싱 오류(400)가 아니라 401
+    client, tok, *_ = env
+    broken = {"Content-Type": "multipart/form-data; boundary=zzz"}
+    assert client.post("/api/v1/sboms/upload", content=b"--zzz\r\nbroken", headers=broken).status_code == 401
+    hdr = broken | {"Authorization": "Basic abc"}
+    assert client.post("/api/v1/sboms/upload", content=b"--zzz\r\nbroken", headers=hdr).status_code == 401
+
+
+def test_upload_validation_error_shape(env):
+    import json
+
+    client, tok, *_ = env
+    spdx = {"file": ("sbom.json", json.dumps({"bomFormat": "SPDX"}).encode(), "application/json")}
+    r = client.post("/api/v1/sboms/upload", data={"service": "upl"}, files=spdx, headers=H(tok["ingest"]))
+    assert r.status_code == 422 and set(r.json()) == {"detail", "errors"}

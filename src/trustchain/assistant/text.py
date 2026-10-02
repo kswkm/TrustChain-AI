@@ -89,6 +89,7 @@ class BM25:
             else:
                 self._lib = BM25Okapi([list(t) for t in corpus_tokens], k1=k1, b=b)
                 self.backend = "rank_bm25"
+                return  # 라이브러리 색인만 사용 (운영 규모 지식베이스에서 같은 색인을 두 번 만들지 않음)
         self.docs = [Counter(t) for t in corpus_tokens]
         self.lens = [len(t) for t in corpus_tokens]
         self.avgdl = (sum(self.lens) / len(self.lens)) if self.lens else 0.0
@@ -158,7 +159,8 @@ class SentenceTransformerEmbedder:
         self.model_name = model_name or os.environ.get("TRUSTCHAIN_EMBED_MODEL", EMBED_MODEL)
         self.model = SentenceTransformer(
             self.model_name, revision=_revision(self.model_name, EMBED_MODEL, EMBED_REVISION, "TRUSTCHAIN_EMBED_REVISION"))
-        self.dim = int(self.model.get_sentence_embedding_dimension())
+        get_dim = getattr(self.model, "get_embedding_dimension", None) or self.model.get_sentence_embedding_dimension
+        self.dim = int(get_dim())
         self.e5 = "e5" in self.model_name.lower()
 
     def embed(self, texts: Sequence[str], is_query: bool = False) -> list[list[float]]:
