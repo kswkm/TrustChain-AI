@@ -93,3 +93,12 @@ def test_scenario7_submits_hardened_pod_and_requires_signature_policy(monkeypatc
     assert r.blocked is True
     fake_run.stderr = 'pods "bypass-test" is forbidden: violates PodSecurity "restricted:latest"'
     assert mod.s7(True, img).blocked is False                 # 서명 정책이 아닌 이유로 거부되면 시나리오 7 차단으로 세지 않음
+
+
+def test_precommit_hooks_also_run_before_push():
+    # 개발기획서 2-3 : "검사를 통과해야 push 할 수 있습니다" → 커밋 시점과 push 직전 모두 점검
+    import yaml
+
+    hooks = {h["id"]: h for h in yaml.safe_load((ROOT / ".pre-commit-hooks.yaml").read_text(encoding="utf-8"))}
+    for hid in ("trustchain-check", "trustchain-pkg-strict"):
+        assert {"pre-commit", "pre-push"} <= set(hooks[hid].get("stages", [])), hid

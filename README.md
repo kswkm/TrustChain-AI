@@ -86,12 +86,16 @@ trustchain pr-draft --report reports/gate.json --requirements requirements.txt
 ### pre-commit
 
 ```yaml
+# 커밋 시점과 push 직전에 모두 점검 : 검사를 통과해야 push 할 수 있다
+default_install_hook_types: [pre-commit, pre-push]
 repos:
   - repo: https://github.com/kswkm/TrustChain-AI
     rev: <commit-sha>
     hooks:
       - id: trustchain-check
 ```
+
+`pre-commit install` 로 두 단계 훅이 함께 설치됩니다.
 
 ### GitHub Actions (다른 저장소에서 설정 몇 줄로 적용)
 
