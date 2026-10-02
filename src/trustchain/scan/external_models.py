@@ -40,12 +40,15 @@ def parse_modelscan(data: Any, rel_dir: str) -> list[Finding]:
 
 
 def run_modelscan(root: Path, model_paths: list[str]) -> tuple[list[Finding], str]:
-    """model_paths : 프로젝트 루트 기준 상대 경로. 상태 ok / missing / failed / no-models."""
+    """model_paths : 프로젝트 루트 기준 상대 경로. 상태 ok / partial / missing / failed / no-models.
+
+    ModelScan 이 일부 파일을 검사하지 못하면(예: h5py 추가 패키지 없이 .h5 스캔 → errors 에 DEPENDENCY) 'partial'.
+    """
     if not model_paths:
         return [], "no-models"
     if not shutil.which("modelscan"):
         return [], "missing"
-    out, ok = [], False
+    out, scanned, incomplete = [], 0, 0
     with tempfile.TemporaryDirectory() as td:
         for i, rp in enumerate(model_paths):
             report = Path(td) / f"r{i}.json"
@@ -53,12 +56,17 @@ def run_modelscan(root: Path, model_paths: list[str]) -> tuple[list[Finding], st
             try:
                 data = json.loads(report.read_text(encoding="utf-8"))
             except (OSError, ValueError):
+                incomplete += 1
                 continue
-            ok = True
+            scanned += 1
+            if isinstance(data, dict) and data.get("errors"):
+                incomplete += 1
             # 단일 파일을 스캔하면 source 는 파일 이름이므로, 파일이 있는 디렉터리를 붙인다
             parent = str(Path(rp).parent).replace("\\", "/")
             out += parse_modelscan(data, "" if parent == "." else parent)
-    return out, "ok" if ok else "failed"
+    if not scanned:
+        return out, "failed"
+    return out, "partial" if incomplete else "ok"
 
 
 def merge_model_findings(existing: list[Finding], new: list[Finding]) -> list[Finding]:

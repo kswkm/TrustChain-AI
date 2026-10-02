@@ -80,3 +80,38 @@ def test_gate_runs_modelscan_with_external_tools(tmp_path, monkeypatch):
     assert out.report.meta["model_scanners"] == {"modelscan": "ok"}
     out = run_gate(cfg, stages={"models"}, external_tools=False)
     assert "model_scanners" not in out.report.meta
+
+
+# ModelScan 0.8.8 단일 파일 스캔 실제 출력 (`modelscan -p models/evil.pkl` : source 는 파일 이름만)
+SINGLE_PKL = {"summary": {"total_issues": 1}, "errors": [],
+              "issues": [{"description": "Use of unsafe operator 'system' from module 'nt'", "operator": "system",
+                          "module": "nt", "source": "evil.pkl", "scanner": "modelscan.scanners.PickleUnsafeOpScan",
+                          "severity": "CRITICAL"}]}
+# h5py 추가 패키지 없이 h5 파일을 스캔한 실제 출력 : 문제가 아니라 errors(DEPENDENCY) 로 나온다
+H5_NO_EXTRA = {"summary": {"total_issues": 0}, "issues": [],
+               "errors": [{"category": "DEPENDENCY",
+                           "description": "To use modelscan.scanners.H5LambdaDetectScan, please install modelscan with h5py extras."}]}
+
+
+def _fake_tool(monkeypatch, reports):
+    it = iter(reports)
+
+    def fake_run(cmd, timeout=300):
+        Path(cmd[cmd.index("-o") + 1]).write_text(json.dumps(next(it)), encoding="utf-8")
+        return ""
+
+    monkeypatch.setattr(em.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(em, "_run_tool", fake_run)
+
+
+def test_run_modelscan_single_file_source_path(tmp_path, monkeypatch):
+    _fake_tool(monkeypatch, [SINGLE_PKL])
+    out, status = em.run_modelscan(tmp_path, ["models/evil.pkl"])
+    assert status == "ok" and [f.file for f in out] == ["models/evil.pkl"]
+
+
+def test_run_modelscan_reports_partial_when_tool_could_not_scan(tmp_path, monkeypatch):
+    # 스캔하지 못한 파일이 있으면 'ok' 로 넘어가지 않는다 (조용히 건너뛰기 방지)
+    _fake_tool(monkeypatch, [SINGLE_PKL, H5_NO_EXTRA])
+    out, status = em.run_modelscan(tmp_path, ["models/evil.pkl", "models/m.h5"])
+    assert status == "partial" and len(out) == 1
