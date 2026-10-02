@@ -152,3 +152,28 @@ def test_runner_walks_and_disables(tmp_path):
     assert {"TC-DESER-001", "TC-SECRET-002"} <= got
     cfg.disabled_rules = ["TC-DESER-001"]
     assert "TC-DESER-001" not in {f.rule_id for f in run_builtin([tmp_path], cfg)}
+
+
+def test_flask_path_traversal_via_variable():
+    # Flask : 요청 값을 지역 변수에 담은 뒤 파일 경로로 쓰는 흔한 형태 (개발기획서 F1 '경로 조작')
+    src = '''
+from flask import Flask, request
+app = Flask(__name__)
+
+@app.route("/file")
+def read_file():
+    name = request.args.get("name")
+    return open("/data/" + name).read()
+
+@app.route("/safe")
+def read_safe():
+    import os
+    name = request.args.get("name")
+    return open(os.path.join("/data", os.path.basename(name))).read()
+
+@app.route("/const")
+def read_const():
+    name = "report.txt"
+    return open("/data/" + name).read()
+'''
+    assert ids(src).count("TC-PATH-001") == 1

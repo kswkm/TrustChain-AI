@@ -172,6 +172,7 @@ class _Analyzer(ast.NodeVisitor):
         # 함수 스코프 상태
         self.tainted_strings: set[str] = set()  # 비상수 조합으로 만든 문자열 변수
         self.params: set[str] = set()  # 웹 핸들러 파라미터 (외부 입력)
+        self.user_vars: set[str] = set()  # 요청 값(request.args 등)을 담은 지역 변수 (외부 입력)
         self.sanitized: bool = False
         self.in_route = False
 
@@ -221,7 +222,7 @@ class _Analyzer(ast.NodeVisitor):
 
     def from_user_input(self, node: ast.AST) -> bool:
         names = _names_in(node)
-        if names & self.params:
+        if names & (self.params | self.user_vars):
             return True
         # Flask / Django 요청 객체
         for n in ast.walk(node):
@@ -242,8 +243,9 @@ class _Analyzer(ast.NodeVisitor):
 
     # ---------- 함수 스코프 ----------
     def _visit_func(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> None:
-        saved = (self.tainted_strings, self.params, self.sanitized, self.in_route)
+        saved = (self.tainted_strings, self.params, self.sanitized, self.in_route, self.user_vars)
         self.tainted_strings = set()
+        self.user_vars = set()
         is_route = any(self._is_route_decorator(d) for d in node.decorator_list)
         self.in_route = is_route
         self.params = {a.arg for a in node.args.args + node.args.kwonlyargs} - {"self", "cls"} if is_route else set()
@@ -254,7 +256,7 @@ class _Analyzer(ast.NodeVisitor):
         if is_route:
             self._check_input_validation(node)
         self.generic_visit(node)
-        self.tainted_strings, self.params, self.sanitized, self.in_route = saved
+        self.tainted_strings, self.params, self.sanitized, self.in_route, self.user_vars = saved
 
     visit_FunctionDef = _visit_func
     visit_AsyncFunctionDef = _visit_func
@@ -294,7 +296,12 @@ class _Analyzer(ast.NodeVisitor):
 
     def _track_assign(self, target: ast.AST, value: ast.AST) -> None:
         if isinstance(target, ast.Name):
-            if self.is_dynamic_str(value) or (self.params and self.from_user_input(value) and not _is_const(value)):
+            user = self.in_route and not _is_const(value) and self.from_user_input(value)
+            if user:
+                self.user_vars.add(target.id)
+            else:
+                self.user_vars.discard(target.id)
+            if self.is_dynamic_str(value) or user:
                 self.tainted_strings.add(target.id)
             else:
                 self.tainted_strings.discard(target.id)
