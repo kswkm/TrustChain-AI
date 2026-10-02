@@ -15,6 +15,7 @@
   # 커밋 시점과 push 직전 모두 점검 (검사를 통과해야 push 가능). 사용 저장소에서
   #   pre-commit install --hook-type pre-commit --hook-type pre-push
   stages: [pre-commit, pre-push]
+  minimum_pre_commit_version: "3.2.0"
 - id: trustchain-pkg-strict
   name: TrustChain AI 패키지 판정 (주의 포함 차단)
   entry: trustchain check --strict-packages
@@ -22,3 +23,4 @@
   files: (requirements.*\.txt|pyproject\.toml)$
   pass_filenames: false
   stages: [pre-commit, pre-push]
+  minimum_pre_commit_version: "3.2.0"

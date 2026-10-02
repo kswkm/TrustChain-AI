@@ -103,6 +103,7 @@ def test_precommit_hooks_also_run_before_push():
     hooks = {h["id"]: h for h in yaml.safe_load((ROOT / ".pre-commit-hooks.yaml").read_text(encoding="utf-8"))}
     for hid in ("trustchain-check", "trustchain-pkg-strict"):
         assert {"pre-commit", "pre-push"} <= set(hooks[hid].get("stages", [])), hid
+        assert hooks[hid].get("minimum_pre_commit_version") == "3.2.0", hid   # 단계 이름(pre-push)은 3.2.0 부터
 
 
 def test_check_commit_policy_configurable(tmp_path, capsys):

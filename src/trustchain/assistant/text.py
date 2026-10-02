@@ -201,7 +201,7 @@ def default_embedder() -> Embedder:
         except ModelIntegrityError:
             raise  # 변조 가능성 : 대체 구현으로 조용히 넘어가지 않는다
         except Exception as e:  # 모델 미설치/다운로드 불가 → 대체 구현
-            logging.getLogger("trustchain.assistant").info("대체 구현 사용: %s", e.__class__.__name__)
+            logging.getLogger("trustchain.assistant").warning("모델을 불러오지 못해 대체 구현 사용 (검색 품질 저하): %s", e.__class__.__name__)
     return HashingEmbedder(int(os.environ.get("TRUSTCHAIN_EMBED_DIM", "384")))
 
 
