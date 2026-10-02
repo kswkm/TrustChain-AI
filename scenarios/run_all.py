@@ -28,7 +28,7 @@ from trustchain.bom.aibom import generate_aibom, verify_aibom  # noqa: E402
 from trustchain.core.config import Config, ProvenancePolicy  # noqa: E402
 from trustchain.packages.checker import PackageChecker  # noqa: E402
 from trustchain.packages.pypi import PackageMeta  # noqa: E402
-from trustchain.scan.gate import make_checker, run_gate  # noqa: E402
+from trustchain.scan.gate import commit_policy, make_checker, run_gate  # noqa: E402
 
 NOW = datetime.now(timezone.utc)
 
@@ -106,12 +106,10 @@ def s3(tmp: Path, offline: bool) -> Result:
     code = ('import sqlite3\nDB_PASSWORD = "Pr0d-Passw0rd!"\n'
             'def find(uid):\n    cur = sqlite3.connect("x.db").cursor()\n'
             '    cur.execute("SELECT * FROM users WHERE id = " + uid)\n')
-    cfg = project(tmp, {"service.py": code})
+    # 실제 커밋 시점 점검(trustchain check · pre-commit/pre-push)과 같은 정책으로 판정
+    cfg = commit_policy(project(tmp, {"service.py": code}))
     out = run_gate(cfg, stages={"code"}, external_tools=False)
     rules = sorted({f.rule_id for f in out.report.findings})
-    # 커밋 차단 기준: HIGH 이상 → 정책 max_high=0 으로 pre-commit 수준 적용
-    cfg.gate.max_high = 0
-    out = run_gate(cfg, stages={"code"}, external_tools=False)
     return Result(3, "SQL 삽입·하드코딩 비밀정보 커밋", "개발 단계 (F1)", not out.passed, ", ".join(rules))
 
 

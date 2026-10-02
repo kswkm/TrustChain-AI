@@ -58,6 +58,9 @@ class Config:
     )
     offline: bool = False
     gate: GatePolicy = field(default_factory=GatePolicy)
+    # 커밋 시점(trustchain check · pre-commit/pre-push) 기준 : 취약 코드(HIGH 이상)를 개발 단계에서 차단한다.
+    # trustchain.toml 의 [check] 로 완화할 수 있다. 빌드 게이트([gate])와 별개
+    check: GatePolicy = field(default_factory=lambda: GatePolicy(max_high=0))
     provenance: ProvenancePolicy = field(default_factory=ProvenancePolicy)
     disabled_rules: list[str] = field(default_factory=list)
     allow_packages: list[str] = field(default_factory=list)  # 사내 패키지 등 판정 예외

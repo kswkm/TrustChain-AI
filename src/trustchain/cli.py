@@ -107,9 +107,9 @@ def _cfg(args: argparse.Namespace) -> Config:
 
 # ---------------- commands ----------------
 def cmd_check(args: argparse.Namespace) -> int:
-    from trustchain.scan.gate import run_gate
+    from trustchain.scan.gate import commit_policy, run_gate
 
-    cfg = _cfg(args)
+    cfg = commit_policy(_cfg(args))  # 커밋 시점 기준 ([check], 기본 HIGH 이상 차단)
     targets = [Path(p) for p in args.paths] if args.paths else None
     if args.staged:
         targets = _staged_files(cfg.root) or None

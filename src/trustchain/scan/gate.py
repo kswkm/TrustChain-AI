@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -45,6 +45,11 @@ def make_checker(cfg: Config, with_scorecard: bool = True) -> PackageChecker:
         cfg, PyPIClient(http), OSVClient(http), ScorecardClient(http) if with_scorecard else None,
         github=GitHubClient(http) if with_scorecard else None,
     )
+
+
+def commit_policy(cfg: Config) -> Config:
+    """커밋 시점 점검용 설정 : [check] 정책을 게이트 정책으로 쓴 사본 (원래 설정은 바꾸지 않음)."""
+    return replace(cfg, gate=replace(cfg.check))
 
 
 def evaluate(cfg: Config, report: Report, verdicts: list[PackageVerdict]) -> list[str]:

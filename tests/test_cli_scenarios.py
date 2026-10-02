@@ -14,7 +14,8 @@ def test_cli_check_json_and_exit_code(tmp_path, capsys):
                "--format", "json"])
     out = json.loads(capsys.readouterr().out)
     assert out["findings"][0]["rule_id"] == "TC-CMD-001"
-    assert rc == 0  # HIGH 는 기본 정책상 허용 (CRITICAL 0건 기준)
+    # 커밋 시점 점검은 HIGH 이상을 차단한다 (개발기획서 F1·3-5 : 취약 코드 커밋은 개발 단계에서 차단)
+    assert rc == 1 and any("HIGH" in v for v in out["gate"]["violations"])
     # 가짜 키는 나눠 적어 저장소 자체 점검(dogfooding)에 걸리지 않게 한다
     (tmp_path / "b.py").write_text('K = "AKIA' + 'ABCDEFGHIJKLMNOP"\n', encoding="utf-8")
     rc = main(["check", str(tmp_path), "--root", str(tmp_path), "--no-packages", "--no-external", "--format", "sarif"])
@@ -102,3 +103,29 @@ def test_precommit_hooks_also_run_before_push():
     hooks = {h["id"]: h for h in yaml.safe_load((ROOT / ".pre-commit-hooks.yaml").read_text(encoding="utf-8"))}
     for hid in ("trustchain-check", "trustchain-pkg-strict"):
         assert {"pre-commit", "pre-push"} <= set(hooks[hid].get("stages", [])), hid
+
+
+def test_check_commit_policy_configurable(tmp_path, capsys):
+    (tmp_path / "a.py").write_text('DB_PASSWORD = "S3cr3t-Prod-Passw0rd!"\n', encoding="utf-8")
+    args = ["check", str(tmp_path / "a.py"), "--root", str(tmp_path), "--no-packages", "--no-external", "--format", "json"]
+    assert main(args) == 1                                         # 하드코딩 비밀정보(HIGH) 커밋 차단
+    capsys.readouterr()
+    (tmp_path / "trustchain.toml").write_text("[check]\nmax_high = 5\n", encoding="utf-8")
+    assert main(args) == 0                                         # 프로젝트가 커밋 기준을 완화할 수 있다
+    capsys.readouterr()
+
+
+def test_build_gate_policy_unchanged_by_commit_policy(tmp_path):
+    from trustchain.core.config import load_config
+    from trustchain.scan.gate import commit_policy
+
+    cfg = load_config(tmp_path)
+    assert cfg.gate.max_high > 0                                   # 빌드 게이트 기본값은 그대로 (CRITICAL 기준)
+    c = commit_policy(cfg)
+    assert c.gate.max_high == 0 and cfg.gate.max_high > 0          # 원래 설정을 바꾸지 않는다
+
+
+def test_scenario3_uses_real_commit_policy():
+    src = (ROOT / "scenarios" / "run_all.py").read_text(encoding="utf-8")
+    body = src[src.index("def s3("):src.index("def s4(")]
+    assert "commit_policy(" in body and "max_high = 0" not in body
