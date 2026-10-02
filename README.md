@@ -140,7 +140,7 @@ Kubernetes 배포는 `kubectl apply -k deploy/k8s` ([deploy/k8s](deploy/k8s)).
 | 중요정보 노출 | 비밀정보는 Secret/OIDC 로만 주입, 로그 마스킹 필터, 500 오류에는 요청 ID 만 반환 |
 | 역직렬화 | pickle 미사용 (모델 가중치·HTTP 캐시 모두 JSON / `.keras` safe_mode + 해시 검증) |
 | LLM 위협 | 검색 문서는 데이터 블록으로만 전달하고 태그 위장 문자열을 무력화, 인용 번호 검증, 코드 자동 실행 없음 |
-| 공급망 | 의존성 해시 고정(`requirements.lock`, `pip install --require-hashes`, 플랫폼·데모 이미지), 서드파티 Actions 커밋 SHA 고정, CI 도구 버전·바이너리 SHA-256 고정, 베이스 이미지 digest 고정, 플랫폼 이미지에도 SBOM·서명·출처 증명 적용, CI 에서 자체 점검(dogfooding) |
+| 공급망 | 의존성 해시 고정(`requirements.lock`, `pip install --require-hashes`, 플랫폼·데모 이미지), 서드파티 Actions 커밋 SHA 고정, CI 도구 버전·바이너리 SHA-256 고정, 베이스 이미지 digest 고정, RAG 임베딩·리랭킹 모델은 HuggingFace 커밋 리비전으로 고정, 플랫폼 이미지에도 SBOM·AI-BOM(분류 모델·RAG 모델 4종, `models.toml`)·서명·출처 증명 적용, CI 에서 자체 점검(dogfooding) |
 
 ## 개발
 
