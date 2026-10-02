@@ -194,3 +194,73 @@ def test_upload_validation_error_shape(env):
     spdx = {"file": ("sbom.json", json.dumps({"bomFormat": "SPDX"}).encode(), "application/json")}
     r = client.post("/api/v1/sboms/upload", data={"service": "upl"}, files=spdx, headers=H(tok["ingest"]))
     assert r.status_code == 422 and set(r.json()) == {"detail", "errors"}
+
+
+def _nvd_item(cid, product, end_excl, alias_of=None):
+    return {"cve": {
+        "id": cid, "lastModified": "2026-10-01T00:00:00.000",
+        "descriptions": [{"lang": "en", "value": f"{product} issue"}],
+        "metrics": {"cvssMetricV31": [{"cvssData": {"baseScore": 9.1, "baseSeverity": "CRITICAL"}}]},
+        "configurations": [{"nodes": [{"cpeMatch": [
+            {"vulnerable": True, "criteria": f"cpe:2.3:a:vendor:{product}:*:*:*:*:*:*:*:*",
+             "versionEndExcluding": end_excl}]}]}],
+    }}
+
+
+class NVDHTTP(NoNetHTTP):
+    """NVD 최근 수정 CVE 응답을 돌려주는 가짜 HTTP."""
+
+    def __init__(self):
+        self.urls = []
+
+    def get_json(self, url, **kw):
+        self.urls.append(url)
+        if "services.nvd.nist.gov" in url and "lastModStartDate" in url:
+            return {"totalResults": 3, "vulnerabilities": [
+                _nvd_item("CVE-2099-1111", "requests", "2.32.0"),    # SBOM 의 requests 2.31.0 → 영향
+                _nvd_item("CVE-2099-2222", "requests", "2.30.0"),    # 2.31.0 은 이미 수정된 버전 → 영향 없음
+                _nvd_item("CVE-2020-14343", "pyyaml", "5.4"),        # OSV 에 별칭으로 이미 있음 → OSV 경로가 처리
+            ]}
+        return super().get_json(url, **kw)
+
+
+def test_nvd_feed_matches_sbom_components(env, monkeypatch):
+    client, tok, notifier, mon = env
+    client.post("/api/v1/sboms", json={"service": "svc", "digest": DIGEST, "sbom": SBOM}, headers=H(tok["ingest"]))
+    http = NVDHTTP()
+    mon.http = http
+    monkeypatch.delenv("TRUSTCHAIN_NVD_FEED", raising=False)
+    sent_before = {m.vuln_id for m in notifier.sent}
+    stats = mon.run_once()
+    new = {m.vuln_id for m in notifier.sent} - sent_before
+    assert "CVE-2099-1111" in new                      # NVD 에서 수집해 SBOM 과 매칭
+    assert "CVE-2099-2222" not in new                  # 버전 범위 밖
+    assert "CVE-2020-14343" not in new                 # OSV(PYSEC-TEST-1) 와 중복
+    assert stats.nvd_fetched == 3
+    nvd_url = next(u for u in http.urls if "lastModStartDate" in u)
+    assert "lastModEndDate" in nvd_url and "+" not in nvd_url     # 날짜의 '+' 는 URL 에서 공백으로 해석되어 NVD 가 404 를 낸다
+    # 두 번째 실행은 마지막 수집 시각부터 (같은 CVE 로 중복 알림 없음)
+    mon.run_once()
+    assert [m.vuln_id for m in notifier.sent].count("CVE-2099-1111") == 1
+
+
+def test_nvd_feed_can_be_disabled(env, monkeypatch):
+    _, _, _, mon = env
+    http = NVDHTTP()
+    mon.http = http
+    monkeypatch.setenv("TRUSTCHAIN_NVD_FEED", "0")
+    mon.run_once()
+    assert not any("lastModStartDate" in u for u in http.urls)
+
+
+def test_cpe_version_range():
+    from trustchain.feed.monitor import cpe_affects
+
+    m = {"criteria": "cpe:2.3:a:python:requests:*:*:*:*:*:*:*:*", "versionStartIncluding": "2.3.0",
+         "versionEndExcluding": "2.31.0"}
+    assert cpe_affects(m, "requests", "2.30.0") and not cpe_affects(m, "requests", "2.31.0")
+    assert not cpe_affects(m, "requests", "2.2.9") and not cpe_affects(m, "urllib3", "2.30.0")
+    exact = {"criteria": "cpe:2.3:a:tukaani:xz:5.6.0:*:*:*:*:*:*:*"}
+    assert cpe_affects(exact, "xz", "5.6.0") and not cpe_affects(exact, "xz", "5.6.2")
+    assert cpe_affects({"criteria": "cpe:2.3:a:x:python_dateutil:*:*:*:*:*:*:*:*", "versionEndIncluding": "2.8"},
+                       "python-dateutil", "2.8")

@@ -13,10 +13,11 @@ from __future__ import annotations
 import os
 import time
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from packaging.utils import canonicalize_name
+from packaging.version import InvalidVersion, Version
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -30,6 +31,9 @@ from trustchain.server.db import Alert, Artifact, Component, FeedState, Service,
 log = get_logger("trustchain.feed")
 OSV_MODIFIED = "https://osv-vulnerabilities.storage.googleapis.com/{eco}/modified_id.csv"
 NVD_CVE = "https://services.nvd.nist.gov/rest/json/cves/2.0?cveId={cve}"
+# 최근 수정된 CVE (기간 최대 120일, ISO 8601). 페이지당 500건 (응답 크기 제한 20MB 이내)
+NVD_RECENT = ("https://services.nvd.nist.gov/rest/json/cves/2.0?lastModStartDate={start}&lastModEndDate={end}"
+              "&resultsPerPage=500&startIndex={index}")
 DEFAULT_ECOSYSTEMS = ["PyPI", "Debian", "Alpine", "npm", "Go"]
 
 
@@ -38,10 +42,11 @@ class MonitorStats:
     fetched: int = 0
     matched: int = 0
     alerts: int = 0
+    nvd_fetched: int = 0
     latencies_ms: list[float] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
-        return {"fetched": self.fetched, "matched": self.matched, "alerts": self.alerts,
+        return {"fetched": self.fetched, "nvd_fetched": self.nvd_fetched, "matched": self.matched, "alerts": self.alerts,
                 "max_alert_latency_ms": round(max(self.latencies_ms), 1) if self.latencies_ms else None}
 
 
@@ -76,6 +81,38 @@ def parse_modified_csv(text: str, since: str | None, limit: int = 2000) -> list[
         if len(out) >= limit:
             break
     return out
+
+
+def _cpe_norm(name: str) -> str:
+    return name.strip().lower().replace("_", "-").replace(".", "-")
+
+
+def _cpe_product(m: dict[str, Any]) -> str:
+    parts = (m.get("criteria") or "").split(":")
+    return _cpe_norm(parts[4]) if len(parts) > 4 else ""
+
+
+def cpe_affects(m: dict[str, Any], name: str, version: str) -> bool:
+    """NVD cpeMatch 한 항목이 (구성요소 이름, 버전)에 해당하는지. 제품명은 대소문자·구분자(-, _, .)를 무시하고 비교."""
+    if _cpe_product(m) != _cpe_norm(name):
+        return False
+    parts = (m.get("criteria") or "").split(":")
+    exact = parts[5] if len(parts) > 5 else "*"
+    if exact not in ("*", "-", ""):
+        return exact == version
+    try:
+        v = Version(version)
+        checks = [("versionStartIncluding", lambda b: v >= b), ("versionStartExcluding", lambda b: v > b),
+                  ("versionEndIncluding", lambda b: v <= b), ("versionEndExcluding", lambda b: v < b)]
+        bounded = False
+        for key, ok in checks:
+            if m.get(key):
+                bounded = True
+                if not ok(Version(m[key])):
+                    return False
+        return bounded  # 범위 정보가 전혀 없으면 모든 버전으로 보지 않는다 (오탐 방지)
+    except InvalidVersion:
+        return False
 
 
 class FeedMonitor:
@@ -114,7 +151,40 @@ class FeedMonitor:
                 if items:
                     _set_state(s, key, items[0][0])
                 s.commit()
+            if os.environ.get("TRUSTCHAIN_NVD_FEED", "1") == "1":
+                self.collect_nvd(s, stats)
+                s.commit()
         return stats
+
+    def collect_nvd(self, s: Session, stats: MonitorStats, now: datetime | None = None, max_pages: int = 10) -> None:
+        """NVD 에서 마지막 수집 이후 수정된 CVE 를 받아 SBOM 구성요소와 CPE 로 매칭 (최초 실행은 최근 1일)."""
+        now = now or datetime.now(timezone.utc)
+        since = _get_state(s, "nvd:since")
+        start = datetime.fromisoformat(since) if since else now - timedelta(days=1)
+        start = max(start, now - timedelta(days=119))  # NVD API 기간 제한 120일
+        fmt = "%Y-%m-%dT%H:%M:%S.000Z"  # "+00:00" 의 + 는 URL 에서 공백이 되어 NVD 가 404
+        headers = {"apiKey": self.nvd_key} if self.nvd_key else None
+        # CVE 마다 DB 를 다시 읽지 않도록 OSV 별칭·구성요소를 한 번만 읽는다
+        osv_aliases = {a for v in s.scalars(select(Vulnerability)).all() for a in (v.aliases or [])}
+        comps = s.scalars(select(Component).where(Component.type != "machine-learning-model")).all()
+        index = 0
+        for _ in range(max_pages):
+            url = NVD_RECENT.format(start=start.strftime(fmt), end=now.strftime(fmt), index=index)
+            try:
+                data = self.http.get_json(url, headers=headers)
+            except HttpError as e:
+                log.warning("NVD 피드 조회 실패: %s", e)
+                return  # 기준 시각을 옮기지 않아 다음 주기에 다시 시도
+            if not isinstance(data, dict):
+                break
+            items = data.get("vulnerabilities") or []
+            for it in items:
+                stats.nvd_fetched += 1
+                self.process_nvd(s, it, stats, osv_aliases=osv_aliases, comps=comps)
+            index += len(items)
+            if not items or index >= int(data.get("totalResults") or 0):
+                break
+        _set_state(s, "nvd:since", now.isoformat())
 
     def enrich_nvd(self, v: Vulnerability) -> None:
         cve = next((a for a in [v.id, *(v.aliases or [])] if a.startswith("CVE-")), None)
@@ -199,6 +269,52 @@ class FeedMonitor:
             stats.latencies_ms.append(latency)
         log.info("알림: %s %s %s %s (%.1fms)", svc.name, v.id, c.name, c.version, latency)
         return a
+
+    def process_nvd(self, s: Session, item: dict[str, Any], stats: MonitorStats | None = None,
+                    osv_aliases: set[str] | None = None, comps: list[Component] | None = None) -> list[Alert]:
+        cve = item.get("cve") or {}
+        cid = cve.get("id")
+        if not cid:
+            return []
+        if osv_aliases is None:
+            osv_aliases = {a for v in s.scalars(select(Vulnerability)).all() for a in (v.aliases or [])}
+        # OSV 에 같은 CVE(별칭)가 있으면 생태계·버전 정보가 정확한 OSV 경로가 처리한다
+        if cid in osv_aliases:
+            return []
+        matches = [m for conf in cve.get("configurations", []) or [] for node in conf.get("nodes", []) or []
+                   for m in node.get("cpeMatch", []) or [] if m.get("vulnerable")]
+        products = {_cpe_product(m) for m in matches} - {""}
+        if not products:
+            return []
+        row = s.get(Vulnerability, cid)
+        if row is None:
+            row = Vulnerability(id=cid)
+            s.add(row)
+        row.summary = next((d.get("value", "") for d in cve.get("descriptions", []) or [] if d.get("lang") == "en"), "")[:2000]
+        row.aliases, row.modified, row.raw = [], cve.get("lastModified"), item
+        for key in ("cvssMetricV40", "cvssMetricV31", "cvssMetricV30"):
+            ms = (cve.get("metrics") or {}).get(key) or []
+            if ms and (ms[0].get("cvssData") or {}).get("baseScore") is not None:
+                row.cvss = float(ms[0]["cvssData"]["baseScore"])
+                row.severity = severity_from_score(row.cvss).value
+                break
+        created: list[Alert] = []
+        if comps is None:
+            comps = s.scalars(select(Component).where(Component.type != "machine-learning-model")).all()
+        for c in comps:
+            if not c.version or _cpe_norm(c.name) not in products:
+                continue
+            hit = next((m for m in matches if cpe_affects(m, c.name, c.version)), None)
+            if hit is None:
+                continue
+            if stats:
+                stats.matched += 1
+            fixed = [m["versionEndExcluding"] for m in matches if m.get("versionEndExcluding")
+                     and _cpe_product(m) == _cpe_norm(c.name)]
+            a = self._alert(s, c, row, sorted(set(fixed)), stats)
+            if a:
+                created.append(a)
+        return created
 
     def match_artifact(self, artifact_id: int) -> MonitorStats:
         """새로 수집된 SBOM 을 OSV querybatch 로 즉시 검사."""
