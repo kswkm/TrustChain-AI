@@ -346,7 +346,8 @@ def cmd_feed(args: argparse.Namespace) -> int:
     return 0
 
 
-def _assistant(offline_models: bool, osv_dir: str | None = None, cwe_csv: str | None = None):
+def _assistant(offline_models: bool, osv_dir: str | None = None, cwe_csv: str | None = None,
+               nvd_dir: str | None = None):
     from trustchain.assistant.assistant import SecurityAssistant
     from trustchain.assistant.llm import default_llm
     from trustchain.assistant.retriever import HybridRetriever, LexicalReranker, default_reranker
@@ -365,7 +366,7 @@ def _assistant(offline_models: bool, osv_dir: str | None = None, cwe_csv: str | 
         from trustchain.assistant.ingest import knowledge_chunks
 
         emb = HashingEmbedder() if offline_models else default_embedder()
-        retr = HybridRetriever(knowledge_chunks(osv_dir, cwe_csv), emb,
+        retr = HybridRetriever(knowledge_chunks(osv_dir, cwe_csv, nvd_dir), emb,
                                reranker=LexicalReranker() if offline_models else default_reranker())
     return SecurityAssistant(retr, default_llm())
 
@@ -378,7 +379,7 @@ def cmd_kb(args: argparse.Namespace) -> int:
 
     engine = make_engine()
     init_db(engine)
-    chunks = knowledge_chunks(args.osv_dir, args.cwe_csv)
+    chunks = knowledge_chunks(args.osv_dir, args.cwe_csv, args.nvd_dir)
     emb = HashingEmbedder() if args.offline_models else default_embedder()
     with make_session_factory(engine)() as s:
         n = upsert_chunks(s, chunks, emb)
@@ -413,7 +414,7 @@ def cmd_ask(args: argparse.Namespace) -> int:
 def cmd_eval(args: argparse.Namespace) -> int:
     from trustchain.assistant.evaluate import answer_metrics, compare_modes, load_eval_set
 
-    assistant = _assistant(args.offline_models, args.osv_dir, args.cwe_csv)
+    assistant = _assistant(args.offline_models, args.osv_dir, args.cwe_csv, args.nvd_dir)
     items = load_eval_set(Path(args.evalset))
     res = {"n": len(items), "kb_chunks": len(assistant.retriever.chunks), "retrieval": compare_modes(assistant.retriever, items, k=args.k)}
     if args.answers:
@@ -598,6 +599,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     sp = sub.add_parser("kb", help="지식베이스 적재")
     sp.add_argument("--osv-dir")
+    sp.add_argument("--nvd-dir", help="NVD CVE API 2.0 응답 JSON 디렉터리")
     sp.add_argument("--cwe-csv")
     sp.add_argument("--offline-models", action="store_true", help="해싱 임베딩 사용")
     sp.set_defaults(func=cmd_kb)
@@ -616,6 +618,7 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--answers", action="store_true")
     sp.add_argument("--offline-models", action="store_true")
     sp.add_argument("--osv-dir", help="지식베이스에 추가할 OSV 덤프 디렉터리 (실제 운영 규모 측정)")
+    sp.add_argument("--nvd-dir", help="지식베이스에 추가할 NVD CVE API 2.0 응답 JSON 디렉터리")
     sp.add_argument("--cwe-csv", help="지식베이스에 추가할 MITRE CWE CSV")
     sp.add_argument("-o", "--output")
     sp.set_defaults(func=cmd_eval)

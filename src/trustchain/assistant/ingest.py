@@ -159,11 +159,83 @@ def load_osv_dir(path: Path) -> Iterable[Chunk]:
             continue
 
 
-def knowledge_chunks(osv_dir: Path | None = None, cwe_csv: Path | None = None) -> list[Chunk]:
-    """내장 지식(KISA·CWE 요약·공급망·OSV 샘플) + OSV 덤프 + MITRE CWE CSV. 같은 청크 ID 는 처음 것만 남긴다."""
+_FIX_REF_TAGS = {"Patch", "Vendor Advisory", "Release Notes", "Mitigation"}
+
+
+def chunk_nvd(item: dict[str, Any]) -> list[Chunk]:
+    """NVD CVE API 2.0 항목({"cve": {...}}) → 취약점 설명 / 영향 버전 / 조치 방법."""
+    cve = item.get("cve", item)
+    cid = cve.get("id", "")
+    if not cid:
+        return []
+    desc = next((d.get("value", "") for d in cve.get("descriptions", []) or [] if d.get("lang") == "en"), "")
+    cvss = None
+    for key in ("cvssMetricV40", "cvssMetricV31", "cvssMetricV30", "cvssMetricV2"):
+        ms = (cve.get("metrics") or {}).get(key) or []
+        if ms:
+            data = ms[0].get("cvssData") or {}
+            cvss = (data.get("baseScore"), data.get("baseSeverity") or ms[0].get("baseSeverity"), data.get("vectorString"))
+            break
+    cwes = sorted({d.get("value", "") for w in cve.get("weaknesses", []) or [] for d in w.get("description", []) or []
+                   if d.get("value", "").startswith("CWE-")})
+    title = f"{cid} {desc[:80]}".strip()
+    meta = {"id": cid, "cwe": cwes, "url": f"https://nvd.nist.gov/vuln/detail/{cid}", "published": cve.get("published")}
+    out: list[Chunk] = []
+    head = [f"CVSS {cvss[0]} ({cvss[1]}) {cvss[2] or ''}".strip()] if cvss and cvss[0] is not None else []
+    if cwes:
+        head.append("약점 유형: " + ", ".join(cwes))
+    body = "\n".join(head + ([desc] if desc else []))
+    for i, part in enumerate(_split_long(body) if body else []):
+        out.append(Chunk(f"nvd:{cid}:desc:{i}", f"nvd:{cid}", "nvd", title, "취약점 설명", f"{title}\n{part}", meta))
+    ranges: list[str] = []
+    fixed_by: dict[str, list[str]] = {}  # 제품별 수정 버전 (여러 제품을 한 문장에 섞지 않음)
+    for conf in cve.get("configurations", []) or []:
+        for node in conf.get("nodes", []) or []:
+            for m in node.get("cpeMatch", []) or []:
+                if not m.get("vulnerable"):
+                    continue
+                parts = (m.get("criteria") or "").split(":")
+                product = ":".join(parts[3:5]) if len(parts) > 4 else m.get("criteria", "")
+                bounds = [f"{k} {m[k]}" for k in ("versionStartIncluding", "versionStartExcluding",
+                                                   "versionEndIncluding", "versionEndExcluding") if m.get(k)]
+                ranges.append(f"{product}: {', '.join(bounds) or (parts[5] if len(parts) > 5 else '')}")
+                v = m.get("versionEndExcluding")
+                if v and v not in fixed_by.setdefault(product, []):
+                    fixed_by[product].append(v)
+    if ranges:
+        out.append(Chunk(f"nvd:{cid}:affected", f"nvd:{cid}", "nvd", title, "영향 버전",
+                         f"{title}\n영향 범위\n" + "\n".join(sorted(set(ranges))), meta))
+    refs = [r["url"] for r in cve.get("references", []) or [] if set(r.get("tags") or []) & _FIX_REF_TAGS and r.get("url")]
+    fixed = sorted({v for vs in fixed_by.values() for v in vs})
+    if fixed or refs:
+        lines = [f"{prod} → {', '.join(vs)} 이상으로 업그레이드" for prod, vs in sorted(fixed_by.items())[:10] if vs]
+        lines += [f"패치·권고: {u}" for u in refs[:5]]
+        out.append(Chunk(f"nvd:{cid}:fix", f"nvd:{cid}", "nvd", title, "조치 방법",
+                         f"{title}\n조치 방법: " + "\n".join(lines), {**meta, "fixed": sorted(set(fixed))}))
+    return out
+
+
+def load_nvd_dir(path: Path) -> Iterable[Chunk]:
+    """NVD CVE API 2.0 응답({"vulnerabilities": [...]}) 또는 단일 CVE({"cve": ...}) JSON 파일들."""
+    for p in sorted(Path(path).glob("*.json")):
+        try:
+            data = json.loads(p.read_text(encoding="utf-8"))
+        except (ValueError, OSError):
+            continue
+        items = data.get("vulnerabilities") if isinstance(data, dict) and "vulnerabilities" in data else [data]
+        for it in items or []:
+            if isinstance(it, dict):
+                yield from chunk_nvd(it)
+
+
+def knowledge_chunks(osv_dir: Path | None = None, cwe_csv: Path | None = None,
+                     nvd_dir: Path | None = None) -> list[Chunk]:
+    """내장 지식(KISA·CWE 요약·공급망·OSV 샘플) + OSV 덤프 + NVD CVE + MITRE CWE CSV. 같은 청크 ID 는 처음 것만 남긴다."""
     chunks = builtin_knowledge()
     if osv_dir:
         chunks += list(load_osv_dir(Path(osv_dir)))
+    if nvd_dir:
+        chunks += list(load_nvd_dir(Path(nvd_dir)))
     if cwe_csv:
         chunks += chunk_cwe_csv(Path(cwe_csv).read_text(encoding="utf-8", errors="replace"))
     seen: set[str] = set()

@@ -111,6 +111,8 @@ trustchain eval --answers --osv-dir <OSV PyPI 덤프> --cwe-csv <MITRE CWE CSV> 
 지식베이스는 두 가지로 측정했습니다 (2026-10-02).
 - **내장** : 패키지에 포함된 KISA·CWE 요약·공급망 문서·OSV 샘플 76개 청크
 - **운영 규모** : 내장 + OSV PyPI 권고문 14,039건(악성 패키지 보고 `MAL-` 제외, 덤프 SHA-256 `c327e474…`) + MITRE CWE 1000 목록 = **57,337개 청크**
+- NVD CVE 권고문(API 2.0 응답 JSON)은 `trustchain kb --nvd-dir` / `trustchain eval --nvd-dir` 로 같은 구조(설명·영향 버전·조치 방법)로
+  추가합니다. OSV PyPI 권고문 대부분이 CVE 별칭과 같은 내용을 담고 있어 위 측정에는 NVD 를 따로 넣지 않았습니다.
 
 **실제 모델** (다국어 임베딩 `intfloat/multilingual-e5-small` 384차원, Cross-encoder `cross-encoder/mmarco-mMiniLMv2-L12-H384-v1`,
 Kiwi 형태소 분석 + `rank_bm25`, 모델은 HuggingFace 커밋 리비전 고정, 플랫폼 이미지의 해시 고정 의존성으로 실행)

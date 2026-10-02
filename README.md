@@ -22,7 +22,7 @@
 | ③ 배포 | **F8** Verify Gate (서명·인증서 클레임·SLSA·SBOM/AI-BOM 증명) | [attest/verify.py](src/trustchain/attest/verify.py), [trustchain-cd.yml](.github/workflows/trustchain-cd.yml) |
 | | **F9** Kyverno 실행 정책 · IaC 점검 (자체 룰 + Checkov) | [deploy/k8s/kyverno](deploy/k8s/kyverno), [iac/k8s.py](src/trustchain/iac/k8s.py) |
 | ④ 운영 | **F10** 취약점 피드 모니터 (OSV·NVD → SBOM 매칭 → Slack·메일) | [feed/](src/trustchain/feed) |
-| | **F11** AI 보안 어시스턴트 (Kiwi + rank_bm25 키워드 검색 + 다국어 벡터 RRF 하이브리드 검색, Cross-encoder 리랭킹, 근거 인용, PR 초안) | [assistant/](src/trustchain/assistant) |
+| | **F11** AI 보안 어시스턴트 (OSV·NVD 권고문·CWE·KISA 지식베이스, Kiwi + rank_bm25 키워드 검색 + 다국어 벡터 RRF 하이브리드 검색, Cross-encoder 리랭킹, 근거 인용, PR 초안) | [assistant/](src/trustchain/assistant) |
 | | **F12** 대시보드 · 알림 (Streamlit) | [dashboard/app.py](src/trustchain/dashboard/app.py) |
 
 ## 심사용 3분 재현

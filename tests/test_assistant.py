@@ -261,3 +261,63 @@ def test_cross_encoder_rerank_fuses_with_hybrid_rank():
     # 하이브리드 1위·CE 2위인 c0 가 CE 1위·하이브리드 4위인 c3 보다 앞선다
     assert [h.chunk.chunk_id for h in out] == ["c0", "c3", "c1"]   # c1(2위·4위) 0.031754 > c2(3위·3위) 0.031746
     assert out[0].score == pytest.approx(1 / 61 + 1 / 62)
+
+
+NVD_ITEM = {"cve": {
+    "id": "CVE-2023-32681",
+    "published": "2023-05-26T18:15:14.147",
+    "descriptions": [{"lang": "es", "value": "otro"},
+                     {"lang": "en", "value": "Requests leaks Proxy-Authorization headers to destination servers."}],
+    "metrics": {"cvssMetricV31": [{"cvssData": {"baseScore": 6.1, "baseSeverity": "MEDIUM",
+                                                "vectorString": "CVSS:3.1/AV:N/AC:H/PR:N/UI:R/S:C/C:H/I:N/A:N"}}]},
+    "weaknesses": [{"description": [{"lang": "en", "value": "CWE-200"}]}],
+    "configurations": [{"nodes": [{"cpeMatch": [
+        {"vulnerable": True, "criteria": "cpe:2.3:a:python:requests:*:*:*:*:*:python:*:*",
+         "versionStartIncluding": "2.3.0", "versionEndExcluding": "2.31.0"}]}]}],
+    "references": [{"url": "https://github.com/psf/requests/releases/tag/v2.31.0", "tags": ["Release Notes"]},
+                   {"url": "https://github.com/psf/requests/commit/74ea7cf", "tags": ["Patch"]},
+                   {"url": "https://example.com/blog", "tags": []}],
+}}
+
+
+def test_chunk_nvd_sections():
+    from trustchain.assistant.ingest import chunk_nvd
+
+    chunks = {c.section: c for c in chunk_nvd(NVD_ITEM)}
+    assert set(chunks) == {"취약점 설명", "영향 버전", "조치 방법"}
+    d = chunks["취약점 설명"]
+    assert d.chunk_id == "nvd:CVE-2023-32681:desc:0" and d.source == "nvd" and d.doc_id == "nvd:CVE-2023-32681"
+    assert "Proxy-Authorization" in d.text and "otro" not in d.text           # 영어 설명만
+    assert "6.1" in d.text and "CWE-200" in d.text and d.meta["cwe"] == ["CWE-200"]
+    assert "python:requests" in chunks["영향 버전"].text and "2.31.0" in chunks["영향 버전"].text
+    fix = chunks["조치 방법"].text
+    assert "2.31.0 이상" in fix and "commit/74ea7cf" in fix and "example.com/blog" not in fix
+    assert d.meta["url"] == "https://nvd.nist.gov/vuln/detail/CVE-2023-32681"
+
+
+def test_load_nvd_dir_api_response_and_single(tmp_path):
+    import json
+
+    from trustchain.assistant.ingest import knowledge_chunks, load_nvd_dir
+
+    (tmp_path / "page1.json").write_text(json.dumps({"vulnerabilities": [NVD_ITEM]}), encoding="utf-8")
+    single = json.loads(json.dumps(NVD_ITEM))
+    single["cve"]["id"] = "CVE-2099-0001"
+    (tmp_path / "one.json").write_text(json.dumps(single), encoding="utf-8")
+    (tmp_path / "bad.json").write_text("{not json", encoding="utf-8")
+    ids = {c.doc_id for c in load_nvd_dir(tmp_path)}
+    assert ids == {"nvd:CVE-2023-32681", "nvd:CVE-2099-0001"}
+    assert any(c.source == "nvd" for c in knowledge_chunks(nvd_dir=tmp_path))
+
+
+def test_chunk_nvd_fixed_versions_per_product():
+    # 여러 제품의 수정 버전을 한 문장에 섞지 않는다 (Log4Shell 처럼 수십 개 제품이 얽힌 CVE)
+    import copy
+
+    from trustchain.assistant.ingest import chunk_nvd
+
+    item = copy.deepcopy(NVD_ITEM)
+    item["cve"]["configurations"][0]["nodes"][0]["cpeMatch"].append(
+        {"vulnerable": True, "criteria": "cpe:2.3:a:cisco:widget:*:*:*:*:*:*:*:*", "versionEndExcluding": "1.0.9"})
+    fix = next(c for c in chunk_nvd(item) if c.section == "조치 방법").text
+    assert "python:requests → 2.31.0 이상" in fix and "cisco:widget → 1.0.9 이상" in fix
