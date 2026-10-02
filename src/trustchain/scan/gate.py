@@ -16,7 +16,7 @@ from trustchain.packages.github import GitHubClient
 from trustchain.packages.osv import OSVClient
 from trustchain.packages.pypi import PyPIClient
 from trustchain.packages.scorecard import ScorecardClient
-from trustchain.scan import deps
+from trustchain.scan import deps, external_models
 from trustchain.scan.image import check_dockerfiles, parse_trivy, scan_image
 from trustchain.scan.modelscan import scan_models
 from trustchain.secure_coding.runner import run_secure_coding
@@ -89,8 +89,13 @@ def run_gate(
             report.extend(deps.merge_dependency_findings(report.findings, found))
             report.meta["dependency_scanners"] = status
     if "models" in stages:
-        _, mf = scan_models(root, cfg.exclude, root)
+        results, mf = scan_models(root, cfg.exclude, root)
         report.extend(mf)
+        if external_tools:
+            # ProtectAI ModelScan : 자체 스캐너가 찾은 모델 파일만 다시 검사, 같은 파일의 중복 보고는 제외
+            found, status = external_models.run_modelscan(root, [r.path for r in results])
+            report.extend(external_models.merge_model_findings(report.findings, found))
+            report.meta["model_scanners"] = {"modelscan": status}
     if "docker" in stages:
         report.extend(check_dockerfiles(root, cfg.exclude))
     if "iac" in stages:
