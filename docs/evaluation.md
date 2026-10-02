@@ -178,7 +178,10 @@ Kyverno `trustchain-verify-images` 정책도 이 이미지(`ghcr.io/kswkm/mnist-
   `ValidatingPolicy`)을 적용하고, PodSecurity restricted·워크로드 정책을 모두 지킨 Pod 를 서명 없는 이미지로 `kubectl apply` →
   `admission webhook "ivpol.validate.kyverno.svc-fail-finegrained-trustchain-verify-images" denied the request ... CI 워크플로우의 cosign 서명이 없습니다`.
   보안 설정을 모두 지킨 Pod 로 제출하므로 차단 원인은 서명·출처 정책뿐입니다 (2026-10-02 재실측, 5·6·7번을 한 번에 실행해 7종 모두 차단).
-- 워크로드 정책 : 같은 클러스터에서 digest 없는 태그 이미지와 메모리 limit 누락 Pod 를 `trustchain-workload-hardening` 이 거부함을 확인했습니다.
+- 정책 범위 실측 (같은 클러스터, 서버 dry-run 8건 모두 기대대로) : CI 서명 이미지 Pod·Deployment 허용 / 서명 없는 이미지 Pod·Deployment,
+  서명 이미지에 서명 없는 initContainer 를 섞은 Pod 는 `trustchain-verify-images` 가 거부 / digest 없는 태그 이미지, 메모리 limit 누락
+  Pod·Deployment 는 `trustchain-workload-hardening` 이 거부. 두 정책 모두 Deployment·StatefulSet·DaemonSet·Job·CronJob 생성 시점에도
+  적용되고(autogen), 이미지 정책은 일반·초기화·임시 컨테이너를 모두 검증합니다.
 - 대조 : 같은 보안 설정의 Pod 명세에서 이미지만 CI 서명 이미지(`ghcr.io/kswkm/mnist-api@sha256:972f1e92…`)로 바꾸면 Kyverno 가 허용합니다.
   즉 차단 원인은 서명·증명 유무이며, 정책이 모든 이미지를 막는 것이 아닙니다.
 

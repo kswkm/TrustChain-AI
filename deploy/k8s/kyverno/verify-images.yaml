@@ -13,6 +13,10 @@ spec:
   webhookConfiguration:
     timeoutSeconds: 30
   failurePolicy: Fail
+  # Deployment 등 워크로드 컨트롤러도 생성 시점에 검증 (kubectl apply 단계에서 바로 거부)
+  autogen:
+    podControllers:
+      controllers: [deployments, statefulsets, daemonsets, jobs, cronjobs]
   matchConstraints:
     resourceRules:
       - apiGroups: [""]
@@ -54,20 +58,27 @@ spec:
     - name: sbom
       intoto:
         type: https://cyclonedx.org/bom
+  variables:
+    # 일반·초기화·임시(ephemeral) 컨테이너의 이미지를 모두 검증한다
+    - name: allImages
+      expression: >-
+        images.containers
+        + ('initContainers' in images ? images.initContainers : [])
+        + ('ephemeralContainers' in images ? images.ephemeralContainers : [])
   validations:
     - expression: >-
-        images.containers.map(image, verifyImageSignatures(image, [attestors.ci])).all(n, n > 0)
+        variables.allImages.map(image, verifyImageSignatures(image, [attestors.ci])).all(n, n > 0)
       message: "CI 워크플로우의 cosign 서명이 없습니다"
     - expression: >-
-        images.containers.map(image, verifyAttestationSignatures(image, attestations.provenance, [attestors.slsa])).all(n, n > 0)
+        variables.allImages.map(image, verifyAttestationSignatures(image, attestations.provenance, [attestors.slsa])).all(n, n > 0)
       message: "SLSA Build L3 출처 증명이 없습니다"
     - expression: >-
-        images.containers.map(image, extractPayload(image, attestations.provenance).predicate.invocation.configSource.uri
+        variables.allImages.map(image, extractPayload(image, attestations.provenance).predicate.invocation.configSource.uri
         == "git+https://github.com/kswkm/TrustChain-AI@refs/heads/main").all(ok, ok)
       message: "출처 증명의 소스 저장소·브랜치가 일치하지 않습니다"
     - expression: >-
-        images.containers.map(image, verifyAttestationSignatures(image, attestations.sbom, [attestors.ci])).all(n, n > 0)
+        variables.allImages.map(image, verifyAttestationSignatures(image, attestations.sbom, [attestors.ci])).all(n, n > 0)
       message: "CycloneDX SBOM 증명이 없습니다"
     - expression: >-
-        images.containers.map(image, size(extractPayload(image, attestations.sbom).predicate.components) > 0).all(ok, ok)
+        variables.allImages.map(image, size(extractPayload(image, attestations.sbom).predicate.components) > 0).all(ok, ok)
       message: "SBOM 증명에 구성요소가 없습니다"

@@ -85,7 +85,9 @@ def test_scenario7_submits_hardened_pod_and_requires_signature_policy(monkeypatc
     fake_run.stderr = 'admission webhook "ivpol.validate.kyverno.svc" denied: Policy trustchain-verify-images failed'
     r = mod.s7(True, img)
     cmd, manifest = calls[0]
-    assert cmd[:2] == ["kubectl", "apply"] and "-f" in cmd
+    # 남아 있는 같은 이름 Pod 때문에 UPDATE 로 바뀌지 않도록 : 서버 dry-run 생성 + generateName (흔적도 남기지 않음)
+    assert cmd[:2] == ["kubectl", "create"] and "--dry-run=server" in cmd and "-f" in cmd
+    assert "generateName: bypass-test-" in manifest
     for needle in (img, "allowPrivilegeEscalation: false", "runAsNonRoot: true", "memory:", "RuntimeDefault"):
         assert needle in manifest
     assert r.blocked is True

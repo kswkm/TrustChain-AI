@@ -29,7 +29,7 @@ license = "Apache-2.0"
 source_repo = "https://github.com/kswkm/TrustChain-AI"
 revision = "16c0603125c873f3ed05ec9aceedc0dec08f54eb"
 
-# F11 RAG 임베딩 모델 (실행 시 HuggingFace 에서 내려받음, 리비전·가중치 해시 고정)
+# F11 RAG 임베딩 모델 (실행 시 HuggingFace 에서 내려받음. 커밋 리비전으로 고정하고, 그 리비전의 가중치 파일 해시를 기록)
 [[model]]
 name = "intfloat/multilingual-e5-small"
 version = "614241f6"

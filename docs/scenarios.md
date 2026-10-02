@@ -52,5 +52,5 @@ kubectl apply -k deploy/k8s
 
 python scenarios/run_all.py --cluster --image ghcr.io/<owner>/mnist-api@$DIGEST
 # 기대 결과: admission webhook "ivpol.validate.kyverno.svc-fail-finegrained-trustchain-verify-images" denied the request:
-#           policy trustchain-verify-images ... no matching signatures
+#           Policy trustchain-verify-images failed: CI 워크플로우의 cosign 서명이 없습니다
 ```
