@@ -267,7 +267,7 @@ def cmd_iac(args: argparse.Namespace) -> int:
     rep.extend(check_k8s(root, cfg.exclude))
     rep.extend(check_dockerfiles(root, cfg.exclude))
     if not args.no_external:
-        rep.extend(run_checkov(root))
+        rep.extend(run_checkov(root, cfg.exclude)[0])
     if args.format == "text":
         print_report(rep)
     _emit(args, rep.to_dict(), rep)

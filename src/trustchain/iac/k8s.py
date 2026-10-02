@@ -8,12 +8,12 @@ from __future__ import annotations
 
 import json
 import shutil
-import subprocess  # nosec - 고정 인자 리스트
 from pathlib import Path
 from typing import Any, Iterator
 
 from trustchain.core.files import iter_files, read_text, rel
 from trustchain.core.findings import Finding, Severity
+from trustchain.secure_coding.runner import _run_tool
 
 WORKLOAD_KINDS = {"Pod", "Deployment", "StatefulSet", "DaemonSet", "ReplicaSet", "Job", "CronJob"}
 
@@ -122,25 +122,19 @@ def check_k8s(root: Path, exclude: list[str]) -> list[Finding]:
     return out
 
 
-def run_checkov(root: Path, timeout: int = 600) -> list[Finding]:
-    exe = shutil.which("checkov")
-    if not exe:
-        return []
-    try:
-        r = subprocess.run(  # nosec
-            [exe, "-d", str(root), "--framework", "kubernetes", "terraform", "dockerfile", "-o", "json", "--quiet",
-             "--compact"], capture_output=True, text=True, timeout=timeout, check=False,
-        )
-    except (OSError, subprocess.TimeoutExpired):
-        return []
-    try:
-        data = json.loads(r.stdout or "[]")
-    except ValueError:
-        return []
+def parse_checkov(data: Any) -> list[Finding]:
+    """Checkov JSON(프레임워크가 여럿이면 리스트, 하나면 객체) → Finding.
+
+    무료 Checkov 는 심각도(severity)를 주지 않으므로 MEDIUM 으로 기록한다 (기본 게이트 정책에서 보고만 하고 차단하지 않음).
+    """
     reports = data if isinstance(data, list) else [data]
     out = []
     for rep in reports:
+        if not isinstance(rep, dict):
+            continue
         for fc in ((rep.get("results") or {}).get("failed_checks")) or []:
+            if not isinstance(fc, dict):
+                continue
             out.append(Finding(
                 rule_id=fc.get("check_id", "CKV"), title=fc.get("check_name", ""),
                 severity=Severity.parse(fc.get("severity"), Severity.MEDIUM), category="iac",
@@ -148,3 +142,18 @@ def run_checkov(root: Path, timeout: int = 600) -> list[Finding]:
                 message=f"{fc.get('resource')}: {fc.get('check_name')}", fix=fc.get("guideline"), tool="checkov",
             ))
     return out
+
+
+def run_checkov(root: Path, exclude: list[str] | None = None, timeout: int = 600) -> tuple[list[Finding], str]:
+    """Kubernetes·Terraform·Dockerfile 점검. 상태 ok / missing / failed. 제외 경로(가상환경 등)는 --skip-path."""
+    if not shutil.which("checkov"):
+        return [], "missing"
+    cmd = ["checkov", "-d", str(root), "--framework", "kubernetes", "terraform", "dockerfile", "-o", "json", "--quiet",
+           "--compact"]
+    for ex in exclude or []:
+        cmd += ["--skip-path", ex]
+    try:
+        data = json.loads(_run_tool(cmd, timeout=timeout) or "")
+    except ValueError:
+        return [], "failed"
+    return parse_checkov(data), "ok"

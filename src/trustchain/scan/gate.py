@@ -101,7 +101,9 @@ def run_gate(
     if "iac" in stages:
         report.extend(check_k8s(root, cfg.exclude))
         if external_tools:
-            report.extend(run_checkov(root))
+            found, status = run_checkov(root, cfg.exclude)
+            report.extend(found)
+            report.meta["iac_scanners"] = {"checkov": status}
     if "image" in stages:
         if trivy_report and trivy_report.is_file():
             report.extend(parse_trivy(json.loads(trivy_report.read_text(encoding="utf-8")), image or "image"))
