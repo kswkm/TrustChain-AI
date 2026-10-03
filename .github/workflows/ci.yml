@@ -80,3 +80,25 @@ jobs:
       trustchain-api: ${{ vars.TRUSTCHAIN_API }}
     secrets:
       trustchain-token: ${{ secrets.TRUSTCHAIN_TOKEN }}
+
+  # 시연 이미지를 Verify Gate → 임시 kind 클러스터(Calico·Kyverno)에 실제 배포하고, 서명 없는 이미지 거부·NetworkPolicy 를 확인.
+  # 플랫폼(trustchain 네임스페이스)도 같은 클러스터에 함께 배포한다. 클라우드 계정·비용 없음.
+  deploy-kind:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [demo, platform]
+    permissions:
+      contents: read
+      packages: read
+      id-token: write
+    uses: ./.github/workflows/trustchain-cd.yml
+    with:
+      image: ${{ needs.demo.outputs.image }}
+      digest: ${{ needs.demo.outputs.digest }}
+      service: mnist-api
+      deployment: mnist-api
+      cluster-auth: kind
+      # 개발자 PC 에서 다시 빌드해 GHCR 에 직접 push 한 서명 없는 이미지 (시나리오 6·7)
+      unsigned-image: ghcr.io/kswkm/mnist-api@sha256:bdd15eea3590ebe948812eb38ecc295138f156e13ded46a440c2216d3cc0f657
+      platform-image: ${{ needs.platform.outputs.image }}@${{ needs.platform.outputs.digest }}
+      signer-repo: ${{ github.repository }}
+      trustchain-ref: ${{ github.sha }}

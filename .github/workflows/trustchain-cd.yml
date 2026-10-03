@@ -5,6 +5,8 @@
 # 클러스터 인증
 #   - cluster-auth: kubeconfig  → secrets.kubeconfig (k3s 시연 환경)
 #   - cluster-auth: aws-oidc    → OIDC 로 IAM Role 을 맡아 단기 자격증명 사용 (장기 키 없음)
+#   - cluster-auth: kind        → 러너 안의 임시 kind 클러스터에 deploy/k8s 를 적용해 실제 배포·Admission 차단·NetworkPolicy 확인
+#                                  (클라우드 계정·비용 없음, 작업이 끝나면 클러스터 삭제)
 name: trustchain-cd
 
 on:
@@ -56,6 +58,14 @@ on:
         type: string
         default: "ap-northeast-2"
       eks-cluster:
+        type: string
+        default: ""
+      unsigned-image:
+        description: "cluster-auth: kind 에서 Admission 거부를 확인할 서명 없는 이미지 (image@sha256:...)"
+        type: string
+        default: ""
+      platform-image:
+        description: "cluster-auth: kind 에서 trustchain 네임스페이스에 함께 배포할 플랫폼 이미지 (image@sha256:..., 선택)"
         type: string
         default: ""
       trustchain-repo:
@@ -133,7 +143,28 @@ jobs:
         with:
           role-to-assume: ${{ inputs.aws-role-arn }}
           aws-region: ${{ inputs.aws-region }}
+      - name: TrustChain AI 소스 받기 (kind 검증용 매니페스트·스크립트)
+        if: inputs.cluster-auth == 'kind'
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: ${{ inputs.trustchain-repo }}
+          ref: ${{ inputs.trustchain-ref }}
+          path: .trustchain-src
+          persist-credentials: false
+      - name: kind 클러스터 실제 배포·차단 검증
+        if: inputs.cluster-auth == 'kind'
+        env:
+          IMAGE: ${{ inputs.image }}
+          DIGEST: ${{ inputs.digest }}
+          UNSIGNED: ${{ inputs.unsigned-image }}
+          PLATFORM_IMAGE: ${{ inputs.platform-image }}
+        run: |
+          curl -fsSL -o /tmp/kind https://github.com/kubernetes-sigs/kind/releases/download/v0.33.0/kind-linux-amd64
+          echo "aee6151561422756b764a4ae28e7f44cda5af5a9eead3cc9985112b1de8d8e0d  /tmp/kind" | sha256sum -c -
+          sudo install -m 0755 /tmp/kind /usr/local/bin/kind
+          bash .trustchain-src/deploy/kind/verify.sh
       - name: kubeconfig 구성
+        if: inputs.cluster-auth != 'kind'
         env:
           KUBECONFIG_DATA: ${{ secrets.kubeconfig }}
         run: |
@@ -144,6 +175,7 @@ jobs:
             printf '%s' "$KUBECONFIG_DATA" > ~/.kube/config
           fi
       - name: digest 로 이미지 교체
+        if: inputs.cluster-auth != 'kind'
         run: |
           kubectl -n "${{ inputs.namespace }}" set image "deployment/${{ inputs.deployment }}" \
             "${{ inputs.container }}=${{ inputs.image }}@${{ inputs.digest }}"
