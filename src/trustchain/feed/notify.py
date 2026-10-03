@@ -55,7 +55,10 @@ class SlackNotifier:
         color = {"CRITICAL": "#b00020", "HIGH": "#e65100", "MEDIUM": "#f9a825"}.get(msg.severity, "#607d8b")
         payload = {"text": msg.text(), "attachments": [{"color": color, "text": msg.summary[:500]}]}
         try:
-            return self.http.post(self.webhook, payload) < 300
+            code = self.http.post(self.webhook, payload)
+            if code >= 300:  # 폐기·오타 웹훅(404 등)도 운영자가 알 수 있게 남긴다 (URL 은 비밀값이라 기록하지 않음)
+                log.warning("Slack 알림 실패: HTTP %s", code)
+            return code < 300
         except HttpError as e:
             log.warning("Slack 알림 실패: %s", e)
             return False

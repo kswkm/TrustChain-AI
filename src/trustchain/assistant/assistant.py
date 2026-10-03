@@ -9,10 +9,12 @@ LLM 관련 위협 대응
 
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass, field
 from typing import Any
 
+import httpx
 from packaging.utils import canonicalize_name
 
 from trustchain.assistant.llm import LLM, ExtractiveLLM
@@ -36,6 +38,8 @@ SYSTEM_PROMPT = """당신은 TrustChain AI 의 소프트웨어 공급망 보안 
 NO_ANSWER = "근거 문서에서 확인할 수 없습니다"
 _TAG = re.compile(r"</?\s*(document|documents|service_context|question|system)[^>]*>", re.I)
 _CITE = re.compile(r"\[(\d{1,2})\]")
+_GROUP_CITE = re.compile(r"\[(\d{1,2}(?:\s*,\s*\d{1,2})+)\]")
+LLM_DOWN = "※ LLM 응답을 받지 못해 근거 문서 발췌로 답변합니다."
 
 
 def _sanitize(text: str, limit: int = 2500) -> str:
@@ -69,6 +73,8 @@ def validate_output(text: str, hits: list[Hit]) -> tuple[str, list[int], bool]:
     """인용 검증 : 범위 밖 번호 제거. 반환 (정제 답변, 사용된 인용 번호, 근거 여부)."""
     text = text.strip()[:8000]
     used: list[int] = []
+    # [1, 2] 처럼 묶은 인용(Gemini 등)은 [1][2] 로 펼쳐 같은 범위 검증을 거친다
+    text = _GROUP_CITE.sub(lambda m: "".join(f"[{n}]" for n in re.findall(r"\d{1,2}", m.group(1))), text)
 
     def fix(m: re.Match) -> str:
         n = int(m.group(1))
@@ -103,7 +109,13 @@ class SecurityAssistant:
                 for p in priorities[:5])
         if not hits:
             return Answer(NO_ANSWER, [], False, priorities)
-        raw = self.llm.complete(SYSTEM_PROMPT, build_prompt(question, hits, context))
+        prompt = build_prompt(question, hits, context)
+        try:
+            raw = self.llm.complete(SYSTEM_PROMPT, prompt)
+        except (httpx.HTTPError, KeyError, IndexError, ValueError) as e:
+            # 외부 LLM 장애·호출 한도 초과 시에도 답변이 끊기지 않도록 발췌형으로 대체한다
+            logging.getLogger("trustchain.assistant").warning("LLM 호출 실패로 발췌형 답변 사용: %s", type(e).__name__)
+            raw = f"{ExtractiveLLM().complete(SYSTEM_PROMPT, prompt)}\n\n{LLM_DOWN}"
         text, used, grounded = validate_output(raw, hits)
         cites = [{"n": n, "chunk_id": hits[n - 1].chunk.chunk_id, "title": hits[n - 1].chunk.title,
                   "source": hits[n - 1].chunk.source, "url": hits[n - 1].chunk.meta.get("url")} for n in used]

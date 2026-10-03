@@ -84,8 +84,13 @@ spec:
           env:
             - name: TRUSTCHAIN_DATABASE_URL
               valueFrom: { secretKeyRef: { name: trustchain-secrets, key: database-url } }
-            - name: TRUSTCHAIN_LLM_API_KEY
+            - name: TRUSTCHAIN_LLM_API_KEY # 없으면 근거 문서 발췌형 답변
               valueFrom: { secretKeyRef: { name: trustchain-secrets, key: llm-api-key, optional: true } }
+            # LLM : Google AI Studio(Gemini) 무료 등급, OpenAI 호환 엔드포인트
+            - { name: TRUSTCHAIN_LLM_PROVIDER, value: openai }
+            - { name: TRUSTCHAIN_LLM_BASE_URL, value: "https://generativelanguage.googleapis.com/v1beta/openai" }
+            - { name: TRUSTCHAIN_LLM_MODEL, value: gemini-3.5-flash }
+            - { name: TRUSTCHAIN_LLM_REASONING_EFFORT, value: low }
             - name: TRUSTCHAIN_SLACK_WEBHOOK
               valueFrom: { secretKeyRef: { name: trustchain-secrets, key: slack-webhook, optional: true } }
             - { name: TRUSTCHAIN_EMBED_DIM, value: "384" }

@@ -50,7 +50,7 @@ python scripts/demo.py              # 네트워크가 없으면: python scripts/
 | 서비스 신뢰 점수 | `legacy-api`(취약 버전 PyYAML·requests 고정, 하드코드 토큰)의 낮은 점수와 감점 내역, 발견 항목의 KISA 가이드 매핑 |
 | 취약점 알림 | SBOM 수집 즉시 OSV 와 매칭된 `legacy-api` 취약점 알림 (네트워크 필요) |
 | 차단 이력 | `attack-scenarios` : 시나리오 1~5 가 커밋·빌드 단계에서 차단된 근거 |
-| AI 보안 어시스턴트 | 서비스 맥락 `legacy-api` 선택 후 "가장 먼저 고쳐야 할 취약점은?" — 근거 문서 인용과 함께 답변 (`ANTHROPIC_API_KEY` 가 있으면 Claude 가 답변을 작성, 없으면 근거 문장 발췌) |
+| AI 보안 어시스턴트 | 서비스 맥락 `legacy-api` 선택 후 "가장 먼저 고쳐야 할 취약점은?" — 근거 문서 인용과 함께 답변 (LLM API 키가 있으면 LLM 이 답변을 작성, 없으면 근거 문장 발췌 — 아래 [LLM 연결](#llm-연결)) |
 
 ## 빠른 시작
 
@@ -113,6 +113,22 @@ jobs:
 빠르게 확인하려면 `python scripts/demo.py` (SQLite, 위 [심사용 3분 재현](#심사용-3분-재현) 참고).
 운영형 구성은 `docker compose up -d --build` (PostgreSQL+pgvector · 수집 API · 대시보드) — 절차는 [docker-compose.yml](docker-compose.yml) 상단 주석 참고.
 Kubernetes 배포는 `kubectl apply -k deploy/k8s` ([deploy/k8s](deploy/k8s)).
+
+### LLM 연결
+
+AI 보안 어시스턴트의 LLM 키는 **서비스 운영자가 서버에 한 번** 넣습니다 (사용자는 키 없이 대시보드·API 로 질의).
+기본 설정은 Google AI Studio(Gemini) 무료 등급의 OpenAI 호환 엔드포인트입니다.
+
+| 설정 | 값 (docker-compose.yml · deploy/k8s 기본값) |
+|---|---|
+| `TRUSTCHAIN_LLM_PROVIDER` | `openai` (OpenAI 호환 API. `anthropic` 도 지원) |
+| `TRUSTCHAIN_LLM_BASE_URL` | `https://generativelanguage.googleapis.com/v1beta/openai` |
+| `TRUSTCHAIN_LLM_MODEL` | `gemini-3.5-flash` |
+| `TRUSTCHAIN_LLM_REASONING_EFFORT` | `low` (사고 강도. 높이면 근거가 충분해도 답변을 거절하는 경향) |
+| `TRUSTCHAIN_LLM_API_KEY` | **비밀값** — docker compose 는 `.secrets/llm_api_key` 파일, Kubernetes 는 `trustchain-secrets` 의 `llm-api-key` (`deploy/k8s/secrets.example.sh`) |
+
+키는 저장소·이미지·compose 파일에 넣지 않습니다. 키가 없거나 LLM 이 응답하지 않으면(503·429 는 지수 대기 후 3회 재시도) 근거 문서 발췌형 답변으로 대체합니다.
+Slack 알림도 같은 방식으로 `.secrets/slack_webhook` (Kubernetes 는 `slack-webhook`) 에 Incoming Webhook URL 을 넣습니다.
 
 ## 검증 결과 (현재 저장소 기준, 재현 명령 포함)
 

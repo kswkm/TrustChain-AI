@@ -412,3 +412,68 @@ def test_log_masking_personal_info():
     s = mask("주민번호 900101-1234567 연락처 010-1234-5678 / 01098765432 키 AKIA" + "ABCDEFGHIJKLMNOP xoxb-1234567890-abcdef")
     assert "900101-1234567" not in s and "010-1234-5678" not in s and "01098765432" not in s
     assert "[RRN]" in s and s.count("[PHONE]") == 2 and "[AWS_KEY]" in s and "[SLACK_TOKEN]" in s
+
+
+def test_openai_compat_gemini_options_and_retry(monkeypatch):
+    # Gemini(OpenAI 호환) : 사고 토큰이 max_tokens 에 포함되고, 무료 등급은 503/429 를 자주 돌려준다
+    import httpx
+
+    from trustchain.assistant import llm
+
+    sent, codes, waits = [], [503, 429, 200], []
+
+    def fake_post(url, headers, json, timeout):
+        sent.append(json)
+        code = codes.pop(0)
+        return httpx.Response(code, json={"choices": [{"message": {"content": "답변 [1]"}}]},
+                              request=httpx.Request("POST", url))
+
+    monkeypatch.setenv("TRUSTCHAIN_LLM_REASONING_EFFORT", "low")
+    monkeypatch.setattr(llm.httpx, "post", fake_post)
+    c = llm.OpenAICompatLLM("k", "https://generativelanguage.googleapis.com/v1beta/openai/", "gemini-3.5-flash")
+    c._sleep = waits.append
+    assert c.complete("sys", "q") == "답변 [1]"
+    assert len(sent) == 3 and waits == [2, 4]
+    assert sent[0]["max_tokens"] >= 8000 and sent[0]["reasoning_effort"] == "low"
+
+    codes[:] = [400]
+    with pytest.raises(httpx.HTTPStatusError):    # 요청 자체 오류는 재시도하지 않음
+        c.complete("sys", "q")
+    monkeypatch.delenv("TRUSTCHAIN_LLM_REASONING_EFFORT")
+    codes[:] = [200]
+    c.complete("sys", "q")
+    assert "reasoning_effort" not in sent[-1]
+
+
+def test_default_llm_openai_compatible_provider(monkeypatch):
+    from trustchain.assistant import llm
+
+    monkeypatch.setenv("TRUSTCHAIN_LLM_PROVIDER", "openai")
+    monkeypatch.setenv("TRUSTCHAIN_LLM_API_KEY", "k")
+    monkeypatch.setenv("TRUSTCHAIN_LLM_BASE_URL", "https://generativelanguage.googleapis.com/v1beta/openai")
+    monkeypatch.setenv("TRUSTCHAIN_LLM_MODEL", "gemini-3.5-flash")
+    m = llm.default_llm()
+    assert isinstance(m, llm.OpenAICompatLLM) and m.model == "gemini-3.5-flash"
+    assert m.base_url.endswith("/v1beta/openai")
+    monkeypatch.delenv("TRUSTCHAIN_LLM_API_KEY")
+    assert isinstance(llm.default_llm(), llm.ExtractiveLLM)   # 키가 없으면 발췌형으로 동작
+
+
+def test_validate_output_grouped_citations():
+    # Gemini 는 [1, 2] 처럼 묶어서 인용한다 → 범위 검증 후 [1][2] 로 정규화
+    hits = [Hit(Chunk(str(i), str(i), "kisa", "t", "s", "x"), 1.0) for i in range(3)]
+    text, used, grounded = validate_output("요약 [1, 2] 그리고 [3,9]", hits)
+    assert used == [1, 2, 3] and grounded
+    assert "[1][2]" in text and "[3]" in text and "9" not in text
+
+
+def test_assistant_falls_back_when_llm_unavailable(retriever):
+    import httpx
+
+    class Down:
+        def complete(self, system, user, max_tokens=1200):
+            raise httpx.ConnectError("unreachable")
+
+    ans = SecurityAssistant(retriever, Down()).ask("torch.load 로 모델을 불러올 때 위험을 줄이는 방법은?")
+    assert ans.grounded and ans.citations
+    assert "LLM 응답을 받지 못해" in ans.answer

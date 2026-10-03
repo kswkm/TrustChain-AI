@@ -1,7 +1,7 @@
 """F11-5. LLM API 클라이언트.
 
 - anthropic : Claude Messages API (기본 모델 claude-sonnet-5-5)
-- openai    : OpenAI 호환 Chat Completions API (사내 게이트웨이·로컬 LLM 서버)
+- openai    : OpenAI 호환 Chat Completions API (Gemini·사내 게이트웨이·로컬 LLM 서버)
 - extractive: LLM 없이 근거 문서 문장을 발췌해 답변 (오프라인·테스트)
 API 키는 환경변수(TRUSTCHAIN_LLM_API_KEY / ANTHROPIC_API_KEY)에서만 읽는다.
 """
@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import os
 import re
+import time
 from typing import Protocol
 
 import httpx
@@ -43,19 +44,31 @@ class AnthropicLLM:
 
 
 class OpenAICompatLLM:
+    """OpenAI 호환 API. Gemini(Google AI Studio) 는 base_url=https://generativelanguage.googleapis.com/v1beta/openai"""
+
+    RETRY_STATUS = {429, 500, 502, 503, 504}
+    RETRIES = 3
+
     def __init__(self, api_key: str, base_url: str, model: str):
         self.api_key, self.base_url, self.model = api_key, base_url.rstrip("/"), model
+        self._sleep = time.sleep
 
     def complete(self, system: str, user: str, max_tokens: int = 1200) -> str:
-        r = httpx.post(
-            f"{self.base_url}/chat/completions",
-            headers={"Authorization": f"Bearer {self.api_key}"},
-            json={"model": self.model, "max_tokens": max_tokens, "temperature": 0,
-                  "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}]},
-            timeout=60,
-        )
+        # 사고(thinking) 모델은 사고 토큰도 max_tokens 에 포함된다 → 본문이 잘리지 않도록 여유를 둔다
+        body = {"model": self.model, "max_tokens": max(max_tokens, int(os.environ.get("TRUSTCHAIN_LLM_MAX_TOKENS", "8000"))),
+                "temperature": 0,
+                "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}]}
+        if effort := os.environ.get("TRUSTCHAIN_LLM_REASONING_EFFORT"):
+            body["reasoning_effort"] = effort
+        for attempt in range(self.RETRIES):
+            r = httpx.post(f"{self.base_url}/chat/completions", headers={"Authorization": f"Bearer {self.api_key}"},
+                           json=body, timeout=120)
+            # 무료 등급의 일시적 과부하(503)·호출 한도(429)만 지수 대기 후 재시도한다
+            if r.status_code not in self.RETRY_STATUS or attempt == self.RETRIES - 1:
+                break
+            self._sleep(2 ** (attempt + 1))
         r.raise_for_status()
-        return r.json()["choices"][0]["message"]["content"]
+        return r.json()["choices"][0]["message"]["content"] or ""
 
 
 class ExtractiveLLM:

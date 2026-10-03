@@ -3,6 +3,10 @@
 #   2) docker compose up -d --build
 #   3) docker compose exec api sh -c 'TRUSTCHAIN_DATABASE_URL=postgresql+psycopg://trustchain:$(cat /run/secrets/pg_password)@db:5432/trustchain \n#        trustchain token --name dashboard --role reader'   → 출력된 토큰을 .secrets/dashboard_token 에 저장
 #   4) docker compose restart dashboard   → http://localhost:8501
+#   5) (선택) LLM·Slack : 운영자가 값을 파일로 넣는다. 쓰지 않으면 빈 파일로 두면 된다.
+#        .secrets/llm_api_key   ← Google AI Studio API 키 (없으면 근거 문서 발췌형 답변)
+#        .secrets/slack_webhook ← Slack Incoming Webhook URL (없으면 메일·대시보드만)
+#      값을 바꾼 뒤 docker compose up -d api
 services:
   db:
     image: docker.io/pgvector/pgvector@sha256:ccc6e83d6e35e931dc7c5def2022729d5a6c370318d099181995567ff1fb4d6b # pg16
@@ -21,12 +25,17 @@ services:
     build: .
     depends_on:
       db: { condition: service_healthy }
-    secrets: [pg_password]
-    # 비밀번호는 파일 시크릿에서 읽어 DATABASE_URL 을 구성한다 (환경변수·이미지에 남기지 않음)
-    entrypoint: ["/bin/sh", "-c", "export TRUSTCHAIN_DATABASE_URL=postgresql+psycopg://trustchain:$$(cat /run/secrets/pg_password)@db:5432/trustchain && exec trustchain server --host 0.0.0.0 --port 8000"]
+    secrets: [pg_password, llm_api_key, slack_webhook]
+    # 비밀값은 파일 시크릿에서 읽는다 (compose 파일·이미지·docker inspect 에 남기지 않음). LLM 키·Slack 은 비어 있으면 끔
+    entrypoint: ["/bin/sh", "-c", "export TRUSTCHAIN_DATABASE_URL=postgresql+psycopg://trustchain:$$(cat /run/secrets/pg_password)@db:5432/trustchain; k=$$(cat /run/secrets/llm_api_key 2>/dev/null); [ -n \"$$k\" ] && export TRUSTCHAIN_LLM_API_KEY=\"$$k\"; w=$$(cat /run/secrets/slack_webhook 2>/dev/null); [ -n \"$$w\" ] && export TRUSTCHAIN_SLACK_WEBHOOK=\"$$w\"; unset k w; exec trustchain server --host 0.0.0.0 --port 8000"]
     environment:
       TRUSTCHAIN_SCHEDULER: "1"
       TRUSTCHAIN_FEED_INTERVAL_MIN: "10"
+      # LLM : Google AI Studio(Gemini) 무료 등급, OpenAI 호환 엔드포인트
+      TRUSTCHAIN_LLM_PROVIDER: openai
+      TRUSTCHAIN_LLM_BASE_URL: https://generativelanguage.googleapis.com/v1beta/openai
+      TRUSTCHAIN_LLM_MODEL: gemini-3.5-flash
+      TRUSTCHAIN_LLM_REASONING_EFFORT: low
     ports: ["127.0.0.1:8000:8000"]
     read_only: true
     tmpfs: [/tmp]
@@ -51,6 +60,10 @@ secrets:
     file: ./.secrets/pg_password
   dashboard_token:
     file: ./.secrets/dashboard_token
+  llm_api_key:
+    file: ./.secrets/llm_api_key
+  slack_webhook:
+    file: ./.secrets/slack_webhook
 
 volumes:
   pgdata:

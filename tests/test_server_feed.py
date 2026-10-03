@@ -134,6 +134,26 @@ def test_slack_webhook_ssrf_guard():
         SlackNotifier("http://169.254.169.254/latest/meta-data")
 
 
+def test_slack_non_2xx_is_logged_without_url(caplog):
+    # 잘못된·폐기된 웹훅(404 등)은 조용히 넘어가지 않고 경고를 남긴다. 웹훅 URL(비밀값)은 로그에 남기지 않음
+    from trustchain.feed.notify import AlertMessage
+
+    class Http:
+        def __init__(self, code):
+            self.code = code
+
+        def post(self, url, payload, headers=None):
+            return self.code
+
+    url = "https://hooks.slack.com/services/T000/B000/secretpart"
+    msg = AlertMessage(service="svc", vuln_id="GHSA-x", severity="HIGH", component="jinja2", version="2.10",
+                       summary="s", fixed=["3.1.5"], recipients=[])
+    with caplog.at_level("WARNING", logger="trustchain.notify"):
+        assert SlackNotifier(url, http=Http(200)).send(msg)
+        assert not SlackNotifier(url, http=Http(404)).send(msg)
+    assert "HTTP 404" in caplog.text and "secretpart" not in caplog.text
+
+
 def test_assistant_endpoint(env):
     client, tok, *_ = env
     r = client.post("/api/v1/assistant/ask", headers=H(tok["reader"]),
