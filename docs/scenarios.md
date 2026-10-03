@@ -34,6 +34,14 @@ python scenarios/run_all.py --image ghcr.io/<owner>/mnist-api@$DIGEST --repo git
 
 실측 환경 : kind v0.33.0 (Kubernetes v1.37) + Kyverno v1.19.1, 정책은 CEL 기반 `ImageValidatingPolicy`·`ValidatingPolicy` (`policies.kyverno.io/v1`). 결과는 [evaluation.md](evaluation.md) 5절.
 
+CI 의 `deploy-kind` 작업이 main 에 push 할 때마다 같은 검증을 자동으로 수행합니다 ([deploy/kind/verify.sh](../deploy/kind/verify.sh) :
+Calico·Kyverno 설치 → 서명 이미지 실제 배포 → 서명 없는 이미지·태그 이미지 거부 → NetworkPolicy → 플랫폼 배포). 로컬에서도 같은 스크립트로 재현합니다.
+
+```bash
+IMAGE=ghcr.io/<owner>/mnist-api DIGEST=sha256:<CI 서명 digest> UNSIGNED=ghcr.io/<owner>/mnist-api@sha256:<서명 없는 digest> \
+  PLATFORM_IMAGE=ghcr.io/<owner>/trustchain-platform@sha256:<digest> bash deploy/kind/verify.sh
+```
+
 ```bash
 # 로컬 kind 클러스터로 재현 (실측에 사용한 절차)
 kind create cluster --name trustchain-s7

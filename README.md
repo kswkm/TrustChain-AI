@@ -112,7 +112,8 @@ jobs:
 
 빠르게 확인하려면 `python scripts/demo.py` (SQLite, 위 [심사용 3분 재현](#심사용-3분-재현) 참고).
 운영형 구성은 `docker compose up -d --build` (PostgreSQL+pgvector · 수집 API · 대시보드) — 절차는 [docker-compose.yml](docker-compose.yml) 상단 주석 참고.
-Kubernetes 배포는 `kubectl apply -k deploy/k8s` ([deploy/k8s](deploy/k8s)).
+Kubernetes 배포는 `kubectl apply -k deploy/k8s` ([deploy/k8s](deploy/k8s)). 비용 없는 실제 배포 검증은 [deploy/kind/verify.sh](deploy/kind/verify.sh)
+(CI `deploy-kind` 작업이 main push 마다 임시 kind 클러스터에 배포·차단·NetworkPolicy 를 확인).
 
 ### LLM 연결
 

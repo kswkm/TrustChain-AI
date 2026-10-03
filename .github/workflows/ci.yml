@@ -43,8 +43,8 @@ jobs:
           name: rag-eval
           path: rag-eval.json
 
+  # PR 에서는 보안 스캔 게이트만 실행한다 (main 보호 규칙의 필수 검사). 이미지 빌드·서명은 main push 에서만
   platform:
-    if: github.event_name == 'push'
     needs: test
     permissions:
       contents: read
@@ -57,11 +57,11 @@ jobs:
       context: "."
       service: trustchain-platform
       trustchain-ref: ${{ github.sha }}
+      scan-only: ${{ github.event_name != 'push' }}
       # 이 저장소는 비공개 : 출처 증명을 공개 Rekor 로그에 기록하는 데 동의 (저장소 이름·커밋 SHA 공개)
       private-repository: true
 
   demo:
-    if: github.event_name == 'push'
     needs: test
     permissions:
       contents: read
@@ -75,6 +75,7 @@ jobs:
       service: mnist-api
       prepare-command: pip install tensorflow-cpu==2.18.0 && python train.py
       trustchain-ref: ${{ github.sha }}
+      scan-only: ${{ github.event_name != 'push' }}
       # 이 저장소는 비공개 : 출처 증명을 공개 Rekor 로그에 기록하는 데 동의 (저장소 이름·커밋 SHA 공개)
       private-repository: true
       trustchain-api: ${{ vars.TRUSTCHAIN_API }}

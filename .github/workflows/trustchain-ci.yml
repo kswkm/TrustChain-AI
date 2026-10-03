@@ -53,6 +53,10 @@ on:
           저장소 이름·워크플로우 경로·커밋 SHA 가 공개 로그에 남는다 (cosign keyless 서명도 동일).
         type: boolean
         default: false
+      scan-only:
+        description: "보안 스캔 게이트만 실행 (PR 검사 : 이미지 빌드·push·서명·출처 증명 생략)"
+        type: boolean
+        default: false
     secrets:
       trustchain-token:
         required: false
@@ -155,6 +159,7 @@ jobs:
   build:
     name: 빌드 · 이미지 스캔 · SBOM/AI-BOM · 서명
     needs: scan
+    if: ${{ !inputs.scan-only }}
     runs-on: ubuntu-22.04
     permissions:
       contents: read

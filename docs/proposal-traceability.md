@@ -44,14 +44,14 @@
 | R2-2.5 | 플랫폼 자신의 이미지에도 SBOM·서명·출처 증명 | 검증됨 | `ci.yml` platform 잡 | — | GHCR `trustchain-platform` 이미지 Verify Gate 6개 항목 통과, 플랫폼 AI-BOM 모델 4종 | R1.2 |
 | R2-3.1 | CLI 가 PyPI·OSV·Scorecard API 조회 | 검증됨 | `packages/pypi.py`, `osv.py`, `scorecard.py` | `test_meta_from_pypi_json`, `test_osv_range_matching` | 실제 API : requests 메타데이터, Scorecard 8.3, OSV requests 2.19.0 취약점 10건 | 실제 응답 처리 |
 | R2-3.2 | 검사를 통과해야 push 가능 | 검증됨 | `.pre-commit-hooks.yaml` `stages: [pre-commit, pre-push]` | `test_precommit_hooks_also_run_before_push` | R1.1 (우회 커밋 push 거부) | push 거부 |
-| R2-3.3 | Repository 브랜치 보호 | **미충족** | GitHub 저장소 설정 | — | `main` 보호 꺼짐(`protected: false`). 저장소 관리자 권한이 필요해 사용자가 설정해야 함 | 보호 규칙 적용 |
+| R2-3.3 | Repository 브랜치 보호 | 검증됨 | GitHub 저장소 Ruleset, `ci.yml` (PR 은 `scan-only` 로 보안 스캔 게이트 실행) | — | GitHub API `rules/branches/main` : 삭제 금지·강제 push 금지·PR 필수·필수 상태 검사(`test`, `platform`·`demo` 보안 스캔 게이트) 활성, `protected: true`. 필수 검사인 스캔 게이트가 PR 에서는 실행되지 않아 PR 이 병합 대기에 걸리는 문제를 발견해 PR 에서도 스캔 게이트만 실행하도록 수정. 저장소 관리자는 우회 허용(단독 개발) | 보호 규칙 적용 |
 | R2-3.4 | Repository 해시 고정 (Actions·의존성) | 검증됨 | 워크플로우 `uses: …@<SHA>`, `requirements.lock` | — | 애플리케이션·이미지 의존성은 `--require-hashes` 로 이미지 2종 실제 빌드, Actions 는 SHA 고정(SLSA 생성기 태그 예외, S13). CI 가 설치하는 점검 도구(Semgrep·Bandit·pip-audit·ModelScan·Checkov·TensorFlow)는 버전만 고정하고 해시는 고정하지 않음, OSV-Scanner 바이너리는 SHA-256 검증 | 애플리케이션·이미지 의존성 해시 설치 |
 | R2-3.5 | CI : 보안약점·의존성·모델 스캔 → 이미지 빌드·취약점 스캔 → SBOM·AI-BOM → SLSA L3 → cosign 서명·증명 | 검증됨 | `trustchain-ci.yml` | — | GitHub Actions 실행 성공(잡 11개), Verify Gate 검증 | 단계별 잡 성공 |
-| R2-3.6 | GHCR digest 관리, CD Verify Gate(cosign verify·slsa-verifier) 통과 시에만 배포 | 검증됨(대체) | `trustchain-cd.yml`, `attest/verify.py` | `test_gate_*` 5건 | Verify Gate 를 실제 GHCR 이미지에 직접 실행(통과·차단 모두 확인). CD 워크플로우의 클라우드 배포 단계는 클라우드 계정이 없어 GitHub 에서 실행하지 않음 | 클라우드 배포 시 확인 |
-| R2-3.7 | 클라우드 Kubernetes 에서 Kyverno 가 서명·출처 재확인 후 실행 | 검증됨(대체) | `deploy/k8s/kyverno/` | — | 로컬 kind(Kubernetes v1.37) + Kyverno 1.19.1 에서 서버 dry-run 8건·시나리오 7 실측. 클라우드 클러스터는 계정·비용 필요로 미실행 | 클라우드 클러스터 적용 시 확인 |
-| R2-3.8 | app 네임스페이스 : MNIST 추론 API (TensorFlow·FastAPI) | 검증됨(대체) | `demo/mnist-api/`, `deploy/k8s/base/mnist-api.yaml` | `test_demo_input_validation`, `test_demo_rejects_tampered_model` | 해시 고정 이미지 빌드, 컨테이너에서 /healthz 200·/predict 200·잘못된 입력 422. kind 의 app 네임스페이스에는 Kyverno 승인 검사(서버 dry-run)까지만 수행했고 Deployment 를 실제로 띄우지는 않음 | 클러스터 배포 시 확인 |
-| R2-3.9 | trustchain 네임스페이스 : 수집 API·피드 모니터·AI 어시스턴트·대시보드·PostgreSQL(pgvector) | 검증됨(대체) | `deploy/k8s/base/trustchain.yaml`, `docker-compose.yml` | — | 같은 구성을 docker compose 로 실행해 동작 확인(DB·API·스케줄러·대시보드). K8s 매니페스트는 Checkov·자체 IaC 룰 점검과 네트워크 정책 실측(R2-3.12)까지이며 Kubernetes 위 실행은 하지 않음 | 클러스터 배포 시 확인 |
-| R2-3.10 | 클라우드 인증은 OIDC (장기 키 없음) | 검증됨(대체) | `trustchain-cd.yml` (`id-token: write`, `role-to-assume`) | — | 워크플로우 정의만 확인. 클라우드 계정이 없어 실제 OIDC 교환은 미실행. GitHub OIDC 자체는 cosign keyless 서명에서 실제 사용됨 | 클라우드 배포 시 확인 |
+| R2-3.6 | GHCR digest 관리, CD Verify Gate(cosign verify·slsa-verifier) 통과 시에만 배포 | 검증됨 | `trustchain-cd.yml` (`cluster-auth: kind`), `ci.yml deploy-kind`, `attest/verify.py` | `test_gate_*` 5건 | GitHub Actions 에서 CD 워크플로우가 Verify Gate(서명·SLSA 출처 증명·SBOM·AI-BOM) 통과 후에만 같은 digest 를 kind 클러스터에 배포(Actions run 37092451134). Verify Gate 를 실제 GHCR 이미지에 직접 실행해 통과·차단 모두 확인 | 통과 digest 만 배포 |
+| R2-3.7 | 클라우드 Kubernetes 에서 Kyverno 가 서명·출처 재확인 후 실행 | 검증됨(대체) | `deploy/k8s/kyverno/`, `deploy/kind/verify.sh` | — | 실제 Kubernetes(kind, v1.37) + Kyverno 1.19.1 에서 서명 이미지 Deployment 실제 실행(2/2 Ready)·서명 없는 이미지 거부·태그 이미지 거부를 CI(`deploy-kind`)와 로컬에서 확인. 클라우드 관리형 클러스터가 아닌 점만 대체 | 클라우드 클러스터 적용 시 확인 |
+| R2-3.8 | app 네임스페이스 : MNIST 추론 API (TensorFlow·FastAPI) | 검증됨 | `demo/mnist-api/`, `deploy/k8s/base/mnist-api.yaml` | `test_demo_input_validation`, `test_demo_rejects_tampered_model` | 해시 고정 이미지 빌드, 컨테이너에서 /healthz 200·/predict 200·잘못된 입력 422. kind 의 app 네임스페이스에 CI 서명 digest 로 Deployment 2/2 Ready, 다른 네임스페이스에서 /healthz 200 | 배포·응답 |
+| R2-3.9 | trustchain 네임스페이스 : 수집 API·피드 모니터·AI 어시스턴트·대시보드·PostgreSQL(pgvector) | 검증됨 | `deploy/k8s/base/trustchain.yaml`, `docker-compose.yml` | — | kind 의 trustchain 네임스페이스(PSA restricted)에 CI 서명 플랫폼 이미지로 PostgreSQL(pgvector)·수집 API·대시보드 Ready, 피드 CronJob 생성, 대시보드 → API → DB 토큰 인증 조회 200. 기능 동작(스케줄러 수집·어시스턴트·알림)은 같은 이미지를 docker compose 로 실측 | 배포·API→DB |
+| R2-3.10 | 클라우드 인증은 OIDC (장기 키 없음) | 검증됨(대체) | `trustchain-cd.yml` (`id-token: write`, `role-to-assume`) | — | 클라우드 계정이 없어 AWS IAM 역할 OIDC 교환은 미실행(정의만 확인). GitHub OIDC 토큰은 CI 의 cosign keyless 서명에 실제 사용되고, 그 OIDC 신원(워크플로우·브랜치)을 Verify Gate 와 kind 의 Kyverno 가 배포 시점에 검증. 장기 키·kubeconfig 비밀값 없이 배포 검증 | 클라우드 배포 시 확인 |
 | R2-3.11 | 서비스 계정 최소 권한 | 검증됨(대체) | `deploy/k8s/base/*.yaml` (`automountServiceAccountToken: false`) | `test_k8s_manifest_checks` | 매니페스트 점검(자체 룰·Checkov) | 토큰 자동 마운트 없음 |
 | R2-3.12 | 네트워크 정책 | 검증됨 | `deploy/k8s/base/networkpolicy.yaml` | — | kind + Calico 3.28 에서 실제 통신 8건 : API→DB·대시보드→API·API→외부 HTTPS 허용 / 대시보드→DB·라벨 없는 Pod→DB·API·다른 네임스페이스→API·DB→외부 거부 | 허용·차단 경로가 의도대로 |
 | R2-3.13 | IaC 점검 (Checkov) | 검증됨 | `iac/k8s.py run_checkov`, CI 설치 | `test_parse_checkov_real_output`, `test_run_checkov_status_and_excludes`, `test_gate_records_iac_scanner_status` | 실제 Checkov 3.3.22 : 저장소 13건, Terraform 열린 보안 그룹 탐지 | 실행·결과 반영 |
@@ -163,13 +163,14 @@
 
 | ID | 항목 | 필요한 것 |
 |---|---|---|
-| R2-3.3 | `main` 브랜치 보호 | GitHub 저장소 관리자 설정 (Settings → Branches) |
-| R2-3.6·3.7·3.10 | 클라우드 Kubernetes 실제 배포·OIDC 인증 | 클라우드 계정·비용 (현재는 로컬 kind 로 대체 검증) |
+| R2-3.7·3.10 | 클라우드 관리형 Kubernetes·클라우드 OIDC 역할 위임 | 클라우드 계정·비용 (배포·Admission·NetworkPolicy 는 CI 의 kind 클러스터에서 실제 검증) |
 
 ## 10. 검증 중 발견·수정한 문제
 
 | 발견 | 수정 |
 |---|---|
+| main 보호 규칙의 필수 검사(보안 스캔 게이트)가 PR 에서는 실행되지 않아 PR 이 영원히 대기 | 재사용 CI 에 `scan-only` 입력 추가, PR 에서는 스캔 게이트만 실행(빌드·서명 생략) |
+| CD 워크플로우의 배포 단계가 클라우드 계정 없이는 한 번도 실행되지 않음 | `cluster-auth: kind` 로 CI 에서 임시 클러스터에 실제 배포·차단 검증 |
 | Gemini(사고 모델)는 사고 토큰이 max_tokens 에 포함돼 1200 토큰에서 답변이 잘리고(`length`), 사고 강도가 높으면 근거가 있어도 답변 거절 | OpenAI 호환 클라이언트 토큰 여유 8000·사고 강도 설정(`TRUSTCHAIN_LLM_REASONING_EFFORT=low`) |
 | Gemini 의 `[1, 2]` 묶음 인용을 인용으로 인식하지 못해 근거 있는 답변을 근거 없음으로 판정할 수 있음 | 묶음 인용을 펼쳐 같은 범위 검증 |
 | 무료 등급 503·429 시 질의 실패 | 지수 대기 후 3회 재시도, 끝내 실패하면 근거 발췌형 답변으로 대체 |

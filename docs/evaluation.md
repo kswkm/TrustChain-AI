@@ -187,5 +187,10 @@ Kyverno `trustchain-verify-images` 정책도 이 이미지(`ghcr.io/kswkm/mnist-
 - 대조 : 같은 보안 설정의 Pod 명세에서 이미지만 CI 서명 이미지(`ghcr.io/kswkm/mnist-api@sha256:972f1e92…`)로 바꾸면 Kyverno 가 허용합니다.
   즉 차단 원인은 서명·증명 유무이며, 정책이 모든 이미지를 막는 것이 아닙니다.
 
+- 실제 배포 (2026-10-03, kind + Calico v3.28.2 + Kyverno v1.19.1, [deploy/kind/verify.sh](../deploy/kind/verify.sh)) : CI 서명 이미지 Deployment 2/2 Ready,
+  서명 없는 이미지 Deployment 거부(`trustchain-verify-images`), 태그 이미지 거부(`trustchain-workload-hardening`), 다른 네임스페이스 → 시연 서비스 HTTP 200,
+  시연 서비스 → 외부 송신 차단(대조군은 연결 성공), trustchain 네임스페이스 PostgreSQL·수집 API·대시보드 Ready, 대시보드 → API → DB 조회 200,
+  대시보드 → DB 직접 접속 차단 — 8건 모두 기대대로. 같은 스크립트를 CI `deploy-kind` 작업이 main push 마다 실행합니다 (첫 실행 : Actions run 37092451134, Verify Gate 통과 후 kind 검증 188초, 8건 통과).
+
 절차는 [scenarios.md](scenarios.md) 에 있습니다. Verify Gate 의 판정 로직은
 `tests/test_verify.py` 에서 서명 없음·저장소 불일치·출처 증명 없음·태그 참조를 각각 거부하는지 확인합니다.
